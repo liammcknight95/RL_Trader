@@ -126,12 +126,7 @@ def import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, 
     top_ob_test['Datetime'] = pd.to_datetime(top_ob_test['Datetime'])
     top_ob_test.drop('Unnamed: 0', axis=1, inplace=True)
 
-<<<<<<< HEAD
-    return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test#, data
-=======
-    return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test,data
->>>>>>> 15ae58be42f45ee32f35aaaf30b21af6fa571bfd
-
+    return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test
 
 def standardized_data_cache(data, roll, stdz_depth, standardized_train_file, standardized_test_file, top_ob_train_file, top_ob_test_file):
     # Train test split
