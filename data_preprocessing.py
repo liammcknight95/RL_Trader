@@ -286,8 +286,13 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                     with futures.ThreadPoolExecutor(max_workers=100) as executor:
                         future_to_key = {executor.submit(download_S3_object, lob_data_bucket, key, temp_folder): key for key in keys}
                         for future in futures.as_completed(future_to_key):
-                            future_to_key[future]
-                            #exception = future.exception()
+                            key = future_to_key[future]
+                            exception = future.exception()
+                            if not exception:
+                                yield key, future.result()
+                            else:
+                                yield key, exception
+
                     shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
 
                 # Load all files in to a dictionary
