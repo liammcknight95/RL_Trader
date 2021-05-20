@@ -8,6 +8,7 @@ import shutil
 import boto3
 from os import listdir
 from os.path import isfile, join
+from concurrent import futures
 
 import dask.dataframe as dd
 
@@ -276,11 +277,17 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
                     s3_resource = get_s3_resource()
                     lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
-                    os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+                    temp_folder = f'{raw_data_folder}/tmp/{pair}/{day_folder}'
+                    os.makedirs(temp_folder, exist_ok=True)
 
+                    keys = []
                     for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
-                        lob_data_bucket.download_file(obj.key, f'{raw_data_folder}/tmp/{obj.key}')
-                        print(f'Downloaded {obj.key} from S3')
+                        keys.append(obj.key)
+                    with futures.ThreadPoolExecutor(max_workers=100) as executor:
+                        future_to_key = {executor.submit(download_S3_object, lob_data_bucket, key, temp_folder): key for key in keys}
+                        for future in futures.as_completed(future_to_key):
+                            future_to_key[future]
+                            #exception = future.exception()
                     shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
 
                 # Load all files in to a dictionary
@@ -367,6 +374,11 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
 
     return dd.read_csv(data, compression='gzip')
 
+def download_S3_object(lob_data_bucket, key, temp_folder):
+    path = f'{temp_folder}/{key}'
+    lob_data_bucket.download_file(key, path)
+    print(f'Downloaded {key} to {path}')
+
 def load_lob_json(json_string):
     '''
     Function decode json and fix malformed data issues.
@@ -385,6 +397,10 @@ def load_lob_json(json_string):
 
         if '}0254}' in json_string:
             fixed_json_string = json_string.replace('}0254}', '}')
+            return load_lob_json(fixed_json_string)
+
+        if e.msg == "Expecting ',' delimiter":
+            fixed_json_string = json_string[:e.pos] + ', ' + json_string[e.pos:]
             return load_lob_json(fixed_json_string)
 
         if e.msg == 'Expecting value':
@@ -617,8 +633,8 @@ def back_to_labels(x):
 
 # frequency = timedelta(seconds=10)
 # pair = 'USDT_BTC'
-# date_start = '2020-12-10'
-# date_end = '2021-01-08'
+# date_start = '2021-05-10'
+# date_end = '2021-05-11'
 # lob_depth = 10
 # norm_type = 'dyn_z_score'
 # roll = 7200 * 6
