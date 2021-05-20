@@ -126,12 +126,7 @@ def import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, 
     top_ob_test['Datetime'] = pd.to_datetime(top_ob_test['Datetime'])
     top_ob_test.drop('Unnamed: 0', axis=1, inplace=True)
 
-<<<<<<< HEAD
-    return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test#, data
-=======
-    return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test,data
->>>>>>> 15ae58be42f45ee32f35aaaf30b21af6fa571bfd
-
+    return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test
 
 def standardized_data_cache(data, roll, stdz_depth, standardized_train_file, standardized_test_file, top_ob_train_file, top_ob_test_file):
     # Train test split
@@ -279,27 +274,10 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 processed_data = []
 
                 if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
-
-                    s3_resource = boto3.resource('s3')
-
-                    """
-                    The calls to AWS STS AssumeRole must be signed with the access key ID and secret access key of an existing IAM user.
-                    The credentials can be in environment variables or in a configuration file and will be discovered automatically by the boto3.client() function.
-                    For more information, see the Python SDK documentation: http://boto3.readthedocs.io/en/latest/reference/services/sts.html#client
-                    """
-                    if configuration['other'].getboolean('cross_account_access'):
-                        sts_client = boto3.client('sts')
-                        response = sts_client.assume_role(RoleArn=configuration['other']['cross_account_access_role'], RoleSessionName="AssumeRoleSession")
-                        s3_resource = boto3.resource(
-                            's3',
-                            aws_access_key_id = response['Credentials']['AccessKeyId'],
-                            aws_secret_access_key = response['Credentials']['SecretAccessKey'],
-                            aws_session_token = response['Credentials']['SessionToken'],
-                        )
-
+                    s3_resource = get_s3_resource()
                     lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
-
                     os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+
                     for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
                         lob_data_bucket.download_file(obj.key, f'{raw_data_folder}/tmp/{obj.key}')
                         print(f'Downloaded {obj.key} from S3')
@@ -486,24 +464,9 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
             print(f'Generating {resampled_file_path}')
             raw_file_name = f'{pair}-{datetime.strftime(date_to_process, "%Y%m%d")}.csv.gz'
             raw_file_path = f'{raw_data_folder}/{pair}/{raw_file_name}'
+
             if not os.path.isfile(raw_file_path):
-                s3_resource = boto3.resource('s3')
-
-                """
-                The calls to AWS STS AssumeRole must be signed with the access key ID and secret access key of an existing IAM user.
-                The credentials can be in environment variables or in a configuration file and will be discovered automatically by the boto3.client() function.
-                For more information, see the Python SDK documentation: http://boto3.readthedocs.io/en/latest/reference/services/sts.html#client
-                """
-                if configuration['other'].getboolean('cross_account_access'):
-                    sts_client = boto3.client('sts')
-                    response = sts_client.assume_role(RoleArn=configuration['other']['cross_account_access_role'], RoleSessionName="AssumeRoleSession")
-                    s3_resource = boto3.resource(
-                        's3',
-                        aws_access_key_id = response['Credentials']['AccessKeyId'],
-                        aws_secret_access_key = response['Credentials']['SecretAccessKey'],
-                        aws_session_token = response['Credentials']['SessionToken'],
-                    )
-
+                s3_resource = get_s3_resource()
                 trade_data_bucket = s3_resource.Bucket(configuration['buckets']['trade_data'])
                 trade_data_bucket.download_file(f'{pair}/{raw_file_name}', f'{raw_file_path}')
                 print(f'Downloaded {raw_file_name} from S3')
@@ -554,6 +517,31 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
 
     return dd.read_csv(data, compression='gzip')
 
+def get_s3_resource():
+    """
+    The calls to AWS STS AssumeRole must be signed with the access key ID and secret access key of an existing IAM user.
+    The credentials can be in environment variables or in a configuration file and will be discovered automatically by the boto3.client() function.
+    For more information, see the Python SDK documentation: http://boto3.readthedocs.io/en/latest/reference/services/sts.html#client
+
+    Output: S3 resource object
+    """
+
+    if not hasattr(get_s3_resource, 's3_resource'):
+
+        get_s3_resource.s3_resource = boto3.resource('s3')
+
+        configuration = config()
+        if configuration['other'].getboolean('cross_account_access'):
+            sts_client = boto3.client('sts')
+            response = sts_client.assume_role(RoleArn=configuration['other']['cross_account_access_role'], RoleSessionName="AssumeRoleSession")
+            get_s3_resource.s3_resource = boto3.resource(
+                's3',
+                aws_access_key_id = response['Credentials']['AccessKeyId'],
+                aws_secret_access_key = response['Credentials']['SecretAccessKey'],
+                aws_session_token = response['Credentials']['SessionToken'],
+            )
+
+    return get_s3_resource.s3_resource
 
 def cnn_data_reshaping(X, Y, T):
     '''
