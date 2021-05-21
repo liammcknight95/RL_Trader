@@ -277,22 +277,13 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
                     s3_resource = get_s3_resource()
                     lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
-                    temp_folder = f'{raw_data_folder}/tmp/{pair}/{day_folder}'
-                    os.makedirs(temp_folder, exist_ok=True)
+                    os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
 
                     keys = []
                     for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
                         keys.append(obj.key)
-                    with futures.ThreadPoolExecutor(max_workers=100) as executor:
-                        future_to_key = {executor.submit(download_S3_object, lob_data_bucket, key, temp_folder): key for key in keys}
-                        for future in futures.as_completed(future_to_key):
-                            key = future_to_key[future]
-                            exception = future.exception()
-                            if not exception:
-                                yield key, future.result()
-                            else:
-                                yield key, exception
 
+                    download_s3_folder(lob_data_bucket, day_folder, keys)
                     shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
 
                 # Load all files in to a dictionary
@@ -381,8 +372,20 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
 
 def download_S3_object(lob_data_bucket, key, temp_folder):
     path = f'{temp_folder}/{key}'
-    lob_data_bucket.download_file(key, path)
-    print(f'Downloaded {key} to {path}')
+    try:
+        lob_data_bucket.download_file(key, path)
+        print(f'Downloaded {path}')
+    except Exception as e:
+        print(e)
+
+def download_s3_folder(lob_data_bucket, day_folder, keys):
+    configuration = config()
+    raw_data_folder = configuration['folders']['raw_lob_data']
+
+    with futures.ThreadPoolExecutor(max_workers=100) as executor:
+        future_to_key = {executor.submit(download_S3_object, lob_data_bucket, key, f'{raw_data_folder}/tmp'): key for key in keys}
+        for future in futures.as_completed(future_to_key):
+            future_to_key[future]
 
 def load_lob_json(json_string):
     '''
@@ -636,13 +639,13 @@ def back_to_labels(x):
     elif x == 2:
         return -1
 
-# frequency = timedelta(seconds=10)
-# pair = 'USDT_BTC'
-# date_start = '2021-05-10'
-# date_end = '2021-05-11'
-# lob_depth = 10
-# norm_type = 'dyn_z_score'
-# roll = 7200 * 6
-# label_technique = 'three_steps'
+frequency = timedelta(seconds=10)
+pair = 'USDT_ETH'
+date_start = '2021-05-10'
+date_end = '2021-05-11'
+lob_depth = 10
+norm_type = 'dyn_z_score'
+roll = 7200 * 6
+label_technique = 'three_steps'
 
-# train_dyn_df, test_dyn_df, top_ob_train, top_ob_test = import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, roll)
+train_dyn_df, test_dyn_df, top_ob_train, top_ob_test = import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, roll)
