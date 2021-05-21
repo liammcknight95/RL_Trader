@@ -639,13 +639,13 @@ def back_to_labels(x):
     elif x == 2:
         return -1
 
-frequency = timedelta(seconds=10)
-pair = 'USDT_ETH'
-date_start = '2021-05-10'
-date_end = '2021-05-11'
-lob_depth = 10
-norm_type = 'dyn_z_score'
-roll = 7200 * 6
-label_technique = 'three_steps'
+# frequency = timedelta(seconds=10)
+# pair = 'USDT_ETH'
+# date_start = '2021-05-10'
+# date_end = '2021-05-11'
+# lob_depth = 10
+# norm_type = 'dyn_z_score'
+# roll = 7200 * 6
+# label_technique = 'three_steps'
 
-train_dyn_df, test_dyn_df, top_ob_train, top_ob_test = import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, roll)
+# train_dyn_df, test_dyn_df, top_ob_train, top_ob_test = import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, roll)
