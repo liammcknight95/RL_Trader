@@ -324,7 +324,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 raw_data_frame.sort_index(inplace=True)
                 idx_start = date_to_process
                 idx_end = date_to_process + timedelta(days=1) - timedelta(seconds=1)
-                idx = pd.date_range(idx_start, idx_end, freq=freq)
+                idx = pd.date_range(idx_start, idx_end, freq='1s')
                 raw_data_frame = raw_data_frame.reindex(idx).ffill().fillna(method='bfill') # forward fill gaps and back fill first item if missing
 
                 # Convert hierarchical json data in to tabular format
