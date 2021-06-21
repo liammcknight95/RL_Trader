@@ -6,15 +6,17 @@ from sklearn.preprocessing import MinMaxScaler
 
 class Labels_Generator:
 
-    def __init__(self, mid_px):
+    def __init__(self, mid_px, sg_window, sg_poly):
         self.mid_px = mid_px
+        self.sg_window = sg_window
+        self.sg_poly = sg_poly
 
 
     def get_smooth_px(self):
         ''' Smoothed mid price signal '''
 
         # smooth prices - Savitzky–Golay filter
-        smooth_px = pd.Series(scipy.signal.savgol_filter(self.mid_px, 31, 1))
+        smooth_px = pd.Series(scipy.signal.savgol_filter(self.mid_px, self.sg_window, self.sg_poly))
         return smooth_px
 
 
@@ -59,7 +61,7 @@ class Labels_Generator:
         # build df query with keyward passed to locate index of unprofitable labels
         query = ' & '.join([f'`{k}`<={v}' for k, v in kwargs.items()])
         print(f'Criteria {query}')
-        df_trades.loc[df_trades.query(query).index, 'cleaned_labels'] = pd.NA
+        df_trades.loc[df_trades.query(query).index, 'cleaned_labels'] = np.nan
         # fillna methodology depends on the args passed to the function
         df_trades['cleaned_labels'].fillna(value=fillna_value, method=fillna_method, inplace=True)
 
@@ -135,12 +137,12 @@ def label_insights(labels):
     return idx.shape[0]
 
 
-def cleaned_labels(target_timeseries, method='three_steps', print_details=True):
+def cleaned_labels(target_timeseries, sg_window=31, sg_poly=1, method='three_steps', print_details=True):
     '''
     Wrapper that execute all the steps for a given method
     target_timeseries -- pandas series
     '''
-    labels_gen = Labels_Generator(target_timeseries)
+    labels_gen = Labels_Generator(target_timeseries, sg_window, sg_poly)
 
     if method == 'three_steps':
 
@@ -151,13 +153,13 @@ def cleaned_labels(target_timeseries, method='three_steps', print_details=True):
             label_insights(labels_gen.labels)
 
         # step 2 - first cleaning
-        _ = labels_gen.get_cleaned_labels(fillna_method='ffill', gross_returns=0.005, trade_len=20)
+        _ = labels_gen.get_cleaned_labels(fillna_method='ffill', gross_returns=0.005)
         if print_details:
             print('\n##### Step 2 #####')
             label_insights(labels_gen.labels)
 
         # step 3 - second cleaning
-        df_trades = labels_gen.get_cleaned_labels(fillna_value=0, gross_returns=0.005, trade_len=30)#, gross_returns=0.002)
+        df_trades = labels_gen.get_cleaned_labels(fillna_value=0, gross_returns=0.005, trade_len=1)#, gross_returns=0.002)
         if print_details:    
             print('\n##### Step 3 #####')
             label_insights(labels_gen.labels)
@@ -166,8 +168,53 @@ def cleaned_labels(target_timeseries, method='three_steps', print_details=True):
 
         return labels, labels_gen.get_smooth_px(), df_trades
 
+
+    elif method == 'returns_only':
+        #step 1
+        labels_gen.get_raw_labels()
+        if print_details:
+            print('\n##### Step 1 #####')
+            label_insights(labels_gen.labels)
+
+        # step 2 - first cleaning
+        df_trades = labels_gen.get_cleaned_labels(fillna_method='ffill', gross_returns=0.0005)
+        if print_details:
+            print('\n##### Step 2 #####')
+            label_insights(labels_gen.labels)
+
+        labels = labels_gen.labels
+
+        return labels, labels_gen.get_smooth_px(), df_trades
+
+    
+    elif method == 'two_steps_50bps':
+        #step 1
+        labels_gen.get_raw_labels()
+        if print_details:
+            print('\n##### Step 1 #####')
+            label_insights(labels_gen.labels)
+
+        # # step 2 - first cleaning
+        df_trades = labels_gen.get_cleaned_labels(fillna_value=0, gross_returns=0.005)
+        if print_details:
+            print('\n##### Step 2 #####')
+            label_insights(labels_gen.labels)
+
+        # # step 3 - second cleaning
+        # df_trades = labels_gen.get_cleaned_labels(fillna_value=0, gross_returns=0.003, trade_len=10)#, gross_returns=0.002)
+        # if print_details:    
+        #     print('\n##### Step 3 #####')
+        #     label_insights(labels_gen.labels)
+
+        labels = labels_gen.labels
+
+        return labels, labels_gen.get_smooth_px(), df_trades
+
+
     else:
         raise ValueError(f"Method {method} not recognized")
+
+
 
 
 

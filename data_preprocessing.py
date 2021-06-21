@@ -357,7 +357,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 day_data.to_csv(original_file_name, compression='gzip')
 
             # resample dataframe to the wanted frequency
-            resampled_day_data = day_data.groupby([pd.Grouper(key='Datetime', freq=freq), pd.Grouper(key='Level')]).last().reset_index()
+            resampled_day_data = day_data.groupby([pd.Grouper(key='Datetime', freq=freq), pd.Grouper(key='Level')]).mean().reset_index()
             resampled_day_data.to_csv(resampled_file_path, compression='gzip')
 
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
