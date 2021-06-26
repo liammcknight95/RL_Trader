@@ -88,10 +88,12 @@ def import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, 
 
     else: # check separately for quotes and trades input files
 
-        quotes_data_input = get_lob_data(pair, date_start, date_end, frequency, lob_depth)
+        quotes_data_input_list = get_lob_data(pair, date_start, date_end, frequency, lob_depth)
+        quotes_data_input = dd.read_csv(quotes_data_input_list, compression='gzip')
         quotes_data_input['Datetime'] = dd.to_datetime(quotes_data_input['Datetime'])
 
-        trades_data_input = get_trade_data(pair, date_start, date_end, frequency)
+        trades_data_input_list = get_trade_data(pair, date_start, date_end, frequency)
+        trades_data_input = dd.read_csv(trades_data_input_list, compression='gzip')
         trades_data_input['Datetime'] = dd.to_datetime(trades_data_input['Datetime'])
 
         # once input files have been correctly read from the input folder, it's time to create a single standardized cache for trades and quotes
@@ -390,13 +392,15 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 df_mask = df[df[f'{side}_Spread']<=target_sprd].copy()
                 df_grouped = df_mask.groupby(pd.Grouper(key='Datetime', freq=freq)).agg({'Level':np.max, f'{side}_Size':np.sum})
                 df_grouped.rename(columns={'Level':f'{side}_Level_{tgt_sprd_bps}bps', f'{side}_Size': f'{side}_Size_{tgt_sprd_bps}bps'}, inplace=True)
+                # if spread is too wide, 
+                #df_grouped.loc[:,f'{side}_Level_{tgt_sprd_bps}bps'] = df_grouped.loc[:,f'{side}_Level_{tgt_sprd_bps}bps'].fillna(101)
 
                 max_lvl = df_grouped[f'{side}_Level_{tgt_sprd_bps}bps'].max()
                 print(f"max level on {side} side: {max_lvl}")
                 if max_lvl == 99:
                     print(f"timestamps where level has been maxed out: {df_grouped[df_grouped[f'{side}_Level_{tgt_sprd_bps}bps']==99].index}")
                 
-                
+
                 return df_grouped
 
             df_depth_list = []
@@ -409,6 +413,13 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
             df_px_lv0 = day_data_grp[day_data_grp['Level']==0][['Datetime', 'Ask_Price', 'Bid_Price', 'Mid_Price']].set_index('Datetime')
             df_px_final = pd.merge(df_px_lv0, df_depth, left_index=True, right_index=True, how='left')
 
+            # imputation, fill NAs left from depth aggregation
+            level_cols = [col for col in df_depth.columns if 'Level' in col]
+            size_cols = [col for col in df_depth.columns if 'Size' in col]
+
+            df_px_final.loc[:,level_cols] = df_px_final.loc[:,level_cols].fillna(-1).astype('int64') # assign negative level value if no quote meet spread criteria
+            df_px_final.loc[:, size_cols] = df_px_final.loc[:, size_cols].fillna(0).astype('float64') # and assign zero size to those
+
             df_px_final.to_csv(resampled_file_path, compression='gzip')
 
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
@@ -419,7 +430,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
     # df.to_csv(f'{root_caching_folder}/{pair}/{output_file_name}', compression='gzip', single_file = True)
     # df.to_parquet(f'/tmp/10-seconds.parquet', compression='gzip', engine='pyarrow', write_index=False)
 
-    return dd.read_csv(data, compression='gzip')
+    return data#dd.read_csv(data, compression='gzip')
 
 def download_S3_object(lob_data_bucket, key, temp_folder):
     path = f'{temp_folder}/{key}'
@@ -600,7 +611,7 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
         data.append(resampled_file_path)
 
-    return dd.read_csv(data, compression='gzip')
+    return dd#.read_csv(data, compression='gzip')
 
 def get_s3_resource():
     """
