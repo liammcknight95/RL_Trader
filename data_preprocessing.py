@@ -353,12 +353,63 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 day_data['Ask_Price'] = day_data['Ask_Price'].astype('float64')
                 day_data['Bid_Price'] = day_data['Bid_Price'].astype('float64')
                 day_data['Sequence'] = day_data['Sequence'].astype('int64')
-
+                day_data.sort_values(by=['Datetime', 'Level'], inplace=True)
                 day_data.to_csv(original_file_name, compression='gzip')
 
+            # create additional features useful for resampling
+            day_data['Mid_Price'] = (day_data['Ask_Price'] + day_data['Bid_Price']) / 2
+
+            # top level mid at each timestamp
+            day_data['Prevailing_Mid'] = day_data.groupby('Datetime')['Mid_Price'].transform('first')
+
+            # cumulative depth size
+            day_data['Bid_Cum_Size'] = day_data.groupby('Datetime')['Bid_Size'].transform(np.cumsum)
+            day_data['Ask_Cum_Size'] = day_data.groupby('Datetime')['Ask_Size'].transform(np.cumsum)
+
+            # spread against prevailing mid
+            day_data['Bid_Spread'] = (day_data['Bid_Price'] - day_data['Prevailing_Mid']) / day_data['Prevailing_Mid'] * -1
+            day_data['Ask_Spread'] = (day_data['Ask_Price'] - day_data['Prevailing_Mid']) / day_data['Prevailing_Mid']
+            
             # resample dataframe to the wanted frequency
-            resampled_day_data = day_data.groupby([pd.Grouper(key='Datetime', freq=freq), pd.Grouper(key='Level')]).mean().reset_index()
-            resampled_day_data.to_csv(resampled_file_path, compression='gzip')
+            day_data_grp = day_data.groupby([pd.Grouper(key='Datetime', freq=freq), 'Level']).agg({
+                'Bid_Spread':np.mean, 
+                'Ask_Spread':np.mean, 
+                'Bid_Cum_Size':np.mean, 
+                'Ask_Cum_Size':np.mean, 
+                'Bid_Price':np.mean, 
+                'Ask_Price':np.mean,
+                'Bid_Size':np.mean, 
+                'Ask_Size':np.mean,
+                'Mid_Price':np.mean
+            }).reset_index()
+            
+            # extract features that use depth in a more compact way
+            def get_depth(df, side, target_sprd):
+
+                tgt_sprd_bps = int(target_sprd*10000)
+                df_mask = df[df[f'{side}_Spread']<=target_sprd].copy()
+                df_grouped = df_mask.groupby(pd.Grouper(key='Datetime', freq=freq)).agg({'Level':np.max, f'{side}_Size':np.sum})
+                df_grouped.rename(columns={'Level':f'{side}_Level_{tgt_sprd_bps}bps', f'{side}_Size': f'{side}_Size_{tgt_sprd_bps}bps'}, inplace=True)
+
+                max_lvl = df_grouped[f'{side}_Level_{tgt_sprd_bps}bps'].max()
+                print(f"max level on {side} side: {max_lvl}")
+                if max_lvl == 99:
+                    print(f"timestamps where level has been maxed out: {df_grouped[df_grouped[f'{side}_Level_{tgt_sprd_bps}bps']==99].index}")
+                
+                
+                return df_grouped
+
+            df_depth_list = []
+            for target_sprd in [0.0005, 0.0010, 0.0020, 0.0030]:
+                df_depth_list.append(get_depth(day_data_grp, 'Ask', target_sprd))
+                df_depth_list.append(get_depth(day_data_grp, 'Bid', target_sprd))
+            df_depth = pd.concat(df_depth_list, axis=1)
+
+            # merge first level order book and depth features
+            df_px_lv0 = day_data_grp[day_data_grp['Level']==0][['Datetime', 'Ask_Price', 'Bid_Price', 'Mid_Price']].set_index('Datetime')
+            df_px_final = pd.merge(df_px_lv0, df_depth, left_index=True, right_index=True, how='left')
+
+            df_px_final.to_csv(resampled_file_path, compression='gzip')
 
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
         data.append(resampled_file_path)
@@ -497,43 +548,53 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
 
             day_data = pd.read_csv(raw_file_path, parse_dates=['date'])
 
-            df_trades_grp = day_data.groupby([pd.Grouper(key='date', freq=freq), 'type']).agg({'amount':'sum', 'rate':'mean'}).reset_index()
-            df_trades_piv = df_trades_grp.pivot(values=['amount', 'rate'], columns='type',index='date').reset_index()
+            # group individual trades by time frequency grouper and trade direction to get
+            # total vol traded, average px, number of unique orders and total number of clips
+            df_trades_grp = day_data.groupby([pd.Grouper(key='date', freq=freq), 'type']).agg({'amount':np.sum, 'rate':np.mean, 'orderNumber':pd.Series.nunique,  'globalTradeID':'count'})
 
-            df_trades_piv.columns = list(map("_".join, df_trades_piv.columns)) # "flatten" column names
-            df_trades_piv.rename(columns={'date_':'Datetime', 'amount_buy':'Ask_Size', 'amount_sell':'Bid_Size', 'rate_buy':'Ask_Price', 'rate_sell':'Bid_Price'}, inplace=True)
+            # calculate size weighted average trade price
+            wtavg = lambda x: np.average(x['rate'], weights=x['amount'], axis=0)
+            dfwavg = day_data.groupby([pd.Grouper(key='date', freq=freq), 'type']).apply(wtavg)
+            dfwavg.name = 'wav_price'
 
-            # fill gaps with no trades - MAYBE we need something similar for quotes as a data integrity check
-            start_dt = datetime(date_to_process.year, date_to_process.month, date_to_process.day, 0, 0, 0)
-            end_dt = datetime(date_to_process.year, date_to_process.month, date_to_process.day, 23, 59, 59) # to ensure each timestep is covered
-            date_range_reindex = pd.DataFrame(pd.date_range(start_dt, end_dt, freq=freq), columns=['Datetime'])
-            df_trades_piv = pd.merge(df_trades_piv, date_range_reindex, right_on='Datetime', left_on='Datetime', how='right').sort_values('Datetime')
+            # merge size weighted trade prices into grouped df
+            df_trades_grp = pd.merge(df_trades_grp, dfwavg, left_index=True, right_index=True).reset_index()
+            df_trades_grp.rename(columns={'date':'Datetime', 'rate':'av_price', 'orderNumber':'unique_orders', 'globalTradeID':'clips'}, inplace=True)
 
-            # impute NAs - zero for size and last px for price
-            df_trades_piv.loc[:,['Ask_Size', 'Bid_Size']] = df_trades_piv.loc[:,['Ask_Size', 'Bid_Size']].fillna(0)
-            df_trades_piv.loc[:,['Ask_Price', 'Bid_Price']] = df_trades_piv.loc[:,['Ask_Price', 'Bid_Price']].fillna(method='ffill')
+            # pivot by trade direction
+            df_trades_piv = df_trades_grp.pivot(values=['amount', 'av_price', 'wav_price', 'unique_orders', 'clips'], columns='type',index='Datetime').reset_index()
+
+            # "flatten" column names
+            df_trades_piv.columns = list(map("_".join, df_trades_piv.columns))
+            df_trades_piv.rename(columns={'Datetime_':'Datetime'}, inplace=True)
+            df_trades_piv.set_index('Datetime', inplace=True)
+
+            # impute NAs - zero for size and last px for price. Handle NAs at the top of the df when importing data
+            trade_px_cols = ['av_price_buy', 'av_price_sell', 'wav_price_buy', 'wav_price_sell']
+            trade_size_cols = ['amount_buy', 'amount_sell', 'unique_orders_buy', 'unique_orders_sell', 'clips_buy', 'clips_sell']
+            df_trades_piv.loc[:,trade_size_cols] = df_trades_piv.loc[:,trade_size_cols].fillna(0)
+            df_trades_piv.loc[:,trade_px_cols] = df_trades_piv.loc[:,trade_px_cols].fillna(method='ffill')
 
             # impute NAs for the first rows of the dataframes
-            try:
-                # check if previous day exists and assign last value of previous day df          
-                prev_day = date_to_process + timedelta(days=-1)
-                prev_day_data = pd.read_csv(f'{resampled_data_folder}/{pair}/trades/{freq}/{datetime.strftime(prev_day, "%Y-%m-%d")}.csv.gz')
-                prev_file_ask_px = prev_day_data.iloc[-1]['Ask_Price']
-                prev_file_bid_px = prev_day_data.iloc[-1]['Bid_Price']
+            if df_trades_piv.isna().sum(axis=1).iloc[0] > 0:
+                try:
+                    # check if previous day exists and assign last value of previous day df          
+                    prev_day = date_to_process + timedelta(days=-1)
+                    prev_day_data = pd.read_csv(f'{resampled_data_folder}/{pair}/trades/{freq}/{datetime.strftime(prev_day, "%Y-%m-%d")}.csv.gz')
+                    # extract last row from prev day df, only for px columns, since size has already been filled with zeros
+                    prev_file_px = prev_day_data.iloc[-1][trade_px_cols]
 
-            except Exception as e:
-                # if previous day not in the database, use first avaialble future value - not ideal
-                print(e)
-                print(f'Non-continuous data being processed. imputing avg values for bid or ask prices at the beginning of {date_to_process}')
-                # NOT ideal cause we are leaking information
-                prev_file_ask_px = df_trades_piv['Ask_Price'].dropna().iloc[0]
-                prev_file_bid_px = df_trades_piv['Bid_Price'].dropna().iloc[0]
+                except Exception as e:
+                    # if previous day not in the database, use first avaialble future value - not ideal
+                    print(e)
+                    print(f'Non-continuous data being processed. imputing avg values for bid or ask prices at the beginning of {date_to_process}')
+                    # NOT ideal cause we are leaking information
+                    prev_file_px = df_trades_piv[trade_px_cols].dropna().iloc[0]
 
-            df_trades_piv.loc[:, 'Bid_Price'] = df_trades_piv.loc[:, 'Bid_Price'].fillna(prev_file_bid_px)
-            df_trades_piv.loc[:, 'Ask_Price'] = df_trades_piv.loc[:, 'Ask_Price'].fillna(prev_file_ask_px)
+                # fill outstanding NAs
+                df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[:, trade_px_cols].fillna(prev_file_px)
+                df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[:, trade_px_cols].fillna(prev_file_px)
                     
-            # level -1 to keep it separate from order book depth
-            df_trades_piv['Level'] = -1
             df_trades_piv.to_csv(resampled_file_path, compression='gzip')
 
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
@@ -638,6 +699,8 @@ def back_to_labels(x):
 
     elif x == 2:
         return -1
+
+
 
 # frequency = timedelta(seconds=10)
 # pair = 'USDT_ETH'
