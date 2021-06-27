@@ -188,7 +188,7 @@ def standardize(ts, stdz_depth, norm_type='z_score', roll=0):
 
     Arguments:
     ts -- pandas series or df having timestamp and ob level as index to allow sorting (dynamic z score)
-    ob_levels -- number of ob levels analyzed
+    stdz_depth -- number of ob levels analyzed
     norm_type -- string, can assume values of 'z' or 'dyn' for z-score or dynamic z-score
     roll -- integer, rolling window for dyanamic normalization.
 
@@ -218,9 +218,12 @@ def standardize(ts, stdz_depth, norm_type='z_score', roll=0):
             ts_dyn_z = (ts_stacked - ts_stacked.rolling(roll * stdz_depth * ts_shape).mean().shift((stdz_depth * ts_shape) + 1) 
               ) / ts_stacked.rolling(roll * stdz_depth * ts_shape).std(ddof=0).shift((stdz_depth * ts_shape) + 1)
             
-            norm_df = ts_dyn_z.reset_index().pivot_table(index=['Datetime', 'Level'], columns='level_2', values=0)#, dropna=True)
-            print('done')
-            #Q.put(norm_df)
+            if stdz_depth > 1:
+                norm_df = ts_dyn_z.reset_index().pivot_table(index=['Datetime', 'Level'], columns='level_2', values=0)#, dropna=True)
+
+            elif stdz_depth == 1:
+                norm_df = ts_dyn_z.unstack()
+                
             return norm_df
     else:
         print('Normalization not perfmed, please check your code')
@@ -378,9 +381,9 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 'Ask_Spread':np.mean, 
                 'Bid_Cum_Size':np.mean, 
                 'Ask_Cum_Size':np.mean, 
-                'Bid_Price':np.mean, 
+                'Bid_Price':np.mean,
                 'Ask_Price':np.mean,
-                'Bid_Size':np.mean, 
+                'Bid_Size':np.mean,
                 'Ask_Size':np.mean,
                 'Mid_Price':np.mean
             }).reset_index()
@@ -582,11 +585,12 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
 
             # impute NAs - zero for size and last px for price. Handle NAs at the top of the df when importing data
             trade_px_cols = ['av_price_buy', 'av_price_sell', 'wav_price_buy', 'wav_price_sell']
-            trade_size_cols = ['amount_buy', 'amount_sell', 'unique_orders_buy', 'unique_orders_sell', 'clips_buy', 'clips_sell']
-            df_trades_piv.loc[:,trade_size_cols] = df_trades_piv.loc[:,trade_size_cols].fillna(0)
+            trade_size_cols = ['amount_buy', 'amount_sell']
+            trade_orders_cols = ['unique_orders_buy', 'unique_orders_sell', 'clips_buy', 'clips_sell']
+            df_trades_piv.loc[:,trade_size_cols+trade_orders_cols] = df_trades_piv.loc[:,trade_size_cols+trade_orders_cols].fillna(0)
             df_trades_piv.loc[:,trade_px_cols] = df_trades_piv.loc[:,trade_px_cols].fillna(method='ffill')
 
-            # impute NAs for the first rows of the dataframes
+            # impute NAs for the first rows of the dataframes - #### imputation maybe better handled when importin data
             if df_trades_piv.isna().sum(axis=1).iloc[0] > 0:
                 try:
                     # check if previous day exists and assign last value of previous day df          
@@ -595,23 +599,25 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
                     # extract last row from prev day df, only for px columns, since size has already been filled with zeros
                     prev_file_px = prev_day_data.iloc[-1][trade_px_cols]
 
+                    # fill outstanding NAs
+                    df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[:, trade_px_cols].fillna(prev_file_px)
+                    df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[:, trade_px_cols].fillna(prev_file_px)
                 except Exception as e:
                     # if previous day not in the database, use first avaialble future value - not ideal
                     print(e)
-                    print(f'Non-continuous data being processed. imputing avg values for bid or ask prices at the beginning of {date_to_process}')
+                    #print(f'Non-continuous data being processed. imputing avg values for bid or ask prices at the beginning of {date_to_process}')
                     # NOT ideal cause we are leaking information
-                    prev_file_px = df_trades_piv[trade_px_cols].dropna().iloc[0]
+                    #prev_file_px = df_trades_piv[trade_px_cols].dropna().iloc[0]
+                    continue
 
-                # fill outstanding NAs
-                df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[:, trade_px_cols].fillna(prev_file_px)
-                df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[:, trade_px_cols].fillna(prev_file_px)
+
                     
             df_trades_piv.to_csv(resampled_file_path, compression='gzip')
 
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
         data.append(resampled_file_path)
 
-    return dd#.read_csv(data, compression='gzip')
+    return data#.read_csv(data, compression='gzip')
 
 def get_s3_resource():
     """
