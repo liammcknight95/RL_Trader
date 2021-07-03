@@ -64,6 +64,7 @@ def data_standardization(df_data, norm_type, roll, stdz_depth=1):
     
     ''' Takes df_data as an input and standardize groups of features with similar distributions'''
 
+    ### Run standardization separately
     # column subset - group of input variables with similar distributions
     std_px_cols = ['Ask_Price', 'Bid_Price', 'Mid_Price', 'av_price_buy', 'av_price_sell','wav_price_buy', 'wav_price_sell']
 

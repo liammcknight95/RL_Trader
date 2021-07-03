@@ -177,7 +177,7 @@ def cleaned_labels(target_timeseries, sg_window=31, sg_poly=1, method='three_ste
             label_insights(labels_gen.labels)
 
         # step 2 - first cleaning
-        df_trades = labels_gen.get_cleaned_labels(fillna_method='ffill', gross_returns=0.0005)
+        df_trades = labels_gen.get_cleaned_labels(fillna_method='ffill', gross_returns=0.002)
         if print_details:
             print('\n##### Step 2 #####')
             label_insights(labels_gen.labels)
