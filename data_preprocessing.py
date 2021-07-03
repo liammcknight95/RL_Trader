@@ -9,6 +9,7 @@ import boto3
 from os import listdir
 from os.path import isfile, join
 from concurrent import futures
+import re
 
 import dask.dataframe as dd
 
@@ -32,6 +33,116 @@ def intraday_vol_ret(px_ts, span=100):
     vol = ret.ewm(span=span).std() # exponential weighted std. Specify decay in terms of span
 
     return ret, vol
+
+
+# new data import
+def data_cleaning(df_px, df_trade):
+
+    ''' Merge prices and trades and handle data types and data imputaiton'''
+
+    df_px['Datetime'] = pd.to_datetime(df_px['Datetime'], format='%Y-%m-%d %H:%M:%S')
+    df_trade['Datetime'] = pd.to_datetime(df_trade['Datetime'], format='%Y-%m-%d %H:%M:%S')
+
+    # merge in unique dataset
+    df_data = pd.merge(df_px, df_trade, left_on='Datetime', right_on='Datetime', how='left')
+    df_data.sort_values(by='Datetime', inplace=True)
+    df_data.set_index('Datetime', inplace=True)
+
+    df_missings = df_data[df_data.isna().sum(axis=1)>0] # minutes with no trades
+
+    # impute NAs - zero for size and last px for price. Handle NAs at the top of the df when importing data
+    trade_px_cols = ['av_price_buy', 'av_price_sell', 'wav_price_buy', 'wav_price_sell']
+    trade_size_cols = ['amount_buy', 'amount_sell']
+    trade_orders_cols = ['unique_orders_buy', 'unique_orders_sell', 'clips_buy', 'clips_sell']
+    df_data.loc[:,trade_size_cols+trade_orders_cols] = df_data.loc[:,trade_size_cols+trade_orders_cols].fillna(0)
+    df_data.loc[:,trade_px_cols] = df_data.loc[:,trade_px_cols].fillna(method='ffill')
+
+    return df_data
+
+
+def data_standardization(df_data, norm_type, roll, stdz_depth=1):
+    
+    ''' Takes df_data as an input and standardize groups of features with similar distributions'''
+
+    # column subset - group of input variables with similar distributions
+    std_px_cols = ['Ask_Price', 'Bid_Price', 'Mid_Price', 'av_price_buy', 'av_price_sell','wav_price_buy', 'wav_price_sell']
+
+    rege_size = re.compile('._Size_')
+    std_depth_size_cols = [col for col in df_data.columns if re.search(rege_size, col)]
+
+    std_trade_size_cols = ['amount_buy', 'amount_sell']
+
+    rege_order_book = re.compile('._Level_')
+    std_depth_level_cols = [col for col in df_data.columns if re.search(rege_order_book, col)]
+
+    std_number_trade_cols = ['unique_orders_buy', 'unique_orders_sell', 'clips_buy', 'clips_sell']
+
+
+    # perform dynamic z score standardizations
+    px_dyn_stdz = standardize(df_data[std_px_cols], stdz_depth, norm_type, roll)
+
+    depth_size_dyn_stdz = standardize(df_data[std_depth_size_cols], stdz_depth, norm_type, roll)
+
+    trd_size_dyn_stdz = standardize(df_data[std_trade_size_cols], stdz_depth, norm_type, roll)
+
+    depth_level_dyn_stdz = standardize(df_data[std_depth_level_cols], stdz_depth, norm_type, roll)
+
+    trade_number_dyn_stdz = standardize(df_data[std_number_trade_cols], stdz_depth, norm_type, roll)
+
+    # merge dfs back together
+    df_data_dyn_stdz = pd.concat([px_dyn_stdz, depth_size_dyn_stdz, trd_size_dyn_stdz, depth_level_dyn_stdz, trade_number_dyn_stdz], axis=1)
+    df_data_dyn_stdz.dropna(how='all', inplace=True)
+
+    return df_data_dyn_stdz
+
+
+def train_test_split(df, pctg_split=0.7, stdz_depth=1):
+
+    train_test_split = int((df.shape[0] / stdz_depth) * pctg_split) # slice reference for train and test
+    df_train = df[:train_test_split]
+    df_test = df[train_test_split:]
+
+    return df_train, df_test
+
+
+def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), depth=100, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
+    ''' 
+    Wrap up import data steps:
+        - Read/import price data
+        - Read/import trades data
+        - Merge and clean the resulting dataframe to output final dataset
+        - Standardize dataset
+        - Train/test split
+    
+    Parameters:
+        - pair (string): currency pair being analyzed
+        - date_start (string): initial date in yyy-mm-dd format
+        - date_end (string): final date in yyy-mm-dd format
+        - frequency: timedelta expressed in seconds
+        - dept (int): level of order books being considered for aggregation (max 100)
+        - norm_type (string): can assume values of 'z' or 'dyn' for z-score or dynamic z-score
+        - roll (integer): rolling window for dynamic z-score standardization
+        - stdz_depth: multiplier used in standardization, correspond to the leel of depth of the final dataset
+        '''
+
+    # import px
+    results_px = get_lob_data(pair, date_start, date_end, frequency, depth)
+    df_px = dd.read_csv(results_px, compression='gzip').compute()
+
+    # import trades
+    results_trade = get_trade_data(pair, date_start, date_end, frequency)
+    df_trade = dd.read_csv(results_trade, compression='gzip').compute()
+
+    print(df_trade.shape, df_px.shape)
+    # merge and clean
+    df_data = data_cleaning(df_px, df_trade)
+    print(df_data.shape)
+    print(stdz_depth, norm_type, roll)
+    # standardize
+    print(norm_type, roll)
+    df_data_stdz = data_standardization(df_data, norm_type=norm_type, roll=roll, stdz_depth=1)
+
+    return df_data, df_data_stdz
 
 # Higher level workflow function to keep notebooks tidy
 # 1) import_px_data looks for standardized cached files in Experiments/cache (top ob train/test and depth train/test)
