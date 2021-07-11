@@ -36,17 +36,22 @@ def create_light_deeplob(T, lob_depth):
 def mlp(timestep, n_features):
     ## mlp baseline experiment
 
-    input_layer = Input(timestep, n_features)
+    input_layer = Input(shape=(timestep, n_features, 1))
+    print()
     flattened_input = Flatten()(input_layer)
-    dense_1 = Dense((timestep/2)*n_features)(flattened_input)
-    dense_2 = Dense((timestep/4)*n_features)(dense_1)
-    dense_3 = Dense(int(timestep/8)*n_features)(dense_2)
+    print(flattened_input.shape)
+    dense_1 = Dense(64)(flattened_input)
+    dense_2 = Dense(128)(dense_1)
+    dense_3 = Dense(256)(dense_2)
+    dense_4 = Dense(512)(dense_3)
 
-    out = Dense(3, activation='softmax')(dense_3)
+    out = Dense(3, activation='softmax')(dense_4)
     print(out.shape)
 
     model = Model(inputs=input_layer, outputs=out)
     adam = Adam(lr=0.1, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
+
+    return model
 
 
