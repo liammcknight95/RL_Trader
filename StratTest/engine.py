@@ -42,22 +42,22 @@ class TradingStrategy():
         print(f'Adding {indicator} with: {params}')
 
 
-
-    def _calculate_performance(self, exec_type='next_bar_open'):
+    def _calculate_performance(self, execution_type):
         ''' exec_type can assume values of:
                 - next_bar_open: assume entry and exit trades are executed at the next bar open px
                 - current_bar_close: assume entry and exit trades are executed at the current bar close px
                 - next_bar_worst: TODO, assume trade is executed at the worst px available next bar, high 
                     or low depending on the trade directions         
         '''
-        if exec_type == 'next_bar_open':
-            self.df['potential_entry_price'] = self.df['open'].shift(-1) # assume entry trade is executed at the next bar open
-            self.df['potential_closing_price'] = self.df['open'].shift(-1) # assume closing is executed at the next bar open
 
+        if execution_type == 'next_bar_open':
+            self.df['px_returns_calcs']  = np.where(
+                self.df['EMACrossOver_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
 
-        elif exec_type == 'current_bar_close':
+        elif execution_type == 'current_bar_close':
             self.df['px_returns_calcs'] = self.df['close'].copy()
-            self.df['returns'] = np.log(self.df['close']) - np.log(self.df['close'].shift(1))
+
+        self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
 
         self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
 
@@ -68,13 +68,84 @@ class TradingStrategy():
         # self.df[f'{self.strategy}_cum_performance'].plot(legend=True)
 
 
-    def _add_stop_losses():
-        pass
+    def _add_stop_losses(self, stop_loss):
+
+        # get positions in the dataframe where indicator generates signals
+        open_trades_idx = np.where(self.df[f'{self.strategy}_new_position']!=0)[0]
+        # -2 because of shape is n rows and df is 0 indexed and because we do + 1 later - avoid out of bound error
+        closing_trades_idx = np.append(open_trades_idx, self.df.shape[0]-2)[1:] 
+
+        self.df['trade_grouper'] = np.nan
+        self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index
+        self.df['trade_grouper'] = self.df['trade_grouper'].fillna(method='ffill')
+
+        # scenario where no stop loss is present, invested position is the same as the signal output
+        # keep this column for sanity check later
+        self.df['_new_position'] = self.df[f'{self.strategy}_new_position'].copy()
+        self.df['_trades'] = self.df[f'{self.strategy}_trades'].copy()
+        self.df['_signal'] = self.df[f'{self.strategy}_signal'].copy()
 
 
-    def add_strategy(self, strategy, **indicators):
+        # col to keep track of stop loss trigger
+        self.df['sl_trigger'] = np.nan
+        self.df['sl_hit'] = np.nan
+
+        all_trades_list = []
+        for name, sub_df in self.df.groupby(by='trade_grouper'):
+
+            entry_price = self.df[self.df.index==name]['px_returns_calcs'].values[0]
+            direction = self.df[self.df.index==name][f'{self.strategy}_new_position'].values[0]
+
+            # check for stop losses before any backtesting
+            if direction > 0:
+
+                sl_price = entry_price * (1 - stop_loss)
+                sub_df['sl_trigger'] = sl_price
+                self.df.loc[sub_df.index, 'sl_trigger'] = sl_price
+
+                if (sub_df['sl_trigger'] < sub_df['low']).sum() == sub_df.shape[0]:
+                    print(f'Long ({direction}) position held until signal reversed')
+                    
+                else:
+                    sl_trigger_time = sub_df[~(sub_df['sl_trigger'] < sub_df['low'])].index[0] # when stop loss was triggered
+                    sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index # all the datapoints subsequently affected by stop loss
+
+                    self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = -1 # create exit point when sl is hit
+                    self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "sell" # create exit point when sl is hit
+                    self.df.loc[sl_trigger_time, 'sl_hit'] = True # flag stop loss being hit
+                    self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
+                    
+                    print(f'Stop loss triggered - closing long ({direction}) position')
+
+            elif direction < 0:
+
+                sl_price = entry_price * (1 + stop_loss)
+                sub_df['sl_trigger'] =  sl_price
+                self.df.loc[sub_df.index, 'sl_trigger'] = sl_price
+
+                if (sub_df['sl_trigger'] > sub_df['high']).sum() == sub_df.shape[0]:
+                    print(f'Short ({direction}) position held until signal reversed')
+
+                else:
+                    sl_trigger_time = sub_df[~(sub_df['sl_trigger'] > sub_df['high'])].index[0] # when stop loss was triggered
+                    sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index  # all the datapoints subsequently affected by stop loss
+
+                    self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = 1 # create exit point when sl is hit
+                    self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "buy" # create exit point when sl is hit
+                    self.df.loc[sl_trigger_time, 'sl_hit'] = True # flag stop loss being hit
+                    self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
+                    
+                    print(f'Stop loss triggered - closing short ({direction}) position')
+
+        # recalculate performance with stop losses
+        self._calculate_performance(self.execution_type)
+
+
+    def add_strategy(self, strategy, stop_loss=0, execution_type='next_bar_open', **indicators):
 
         self.strategy = strategy
+        self.execution_type = execution_type ### self.execution_type
+        self.stop_loss = stop_loss
 
         if self.strategy == 'EMACrossOver':
 
@@ -98,11 +169,14 @@ class TradingStrategy():
                 np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
 
         # calculate strategy performance
-        self._calculate_performance(exec_type='current_bar_close')
+        self._calculate_performance(execution_type=self.execution_type)
 
         # add stop loss
+        if stop_loss>0: self._add_stop_losses(self.stop_loss)
 
+        # add transaction costs
     
+
     def trading_chart(self, plot_strategy=False, **indicators):
 
         indicator_names = indicators.values()
