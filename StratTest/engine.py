@@ -89,8 +89,9 @@ class TradingStrategy():
         # col to keep track of stop loss trigger
         self.df['sl_trigger'] = np.nan
         self.df['sl_hit'] = np.nan
+        self.df['sl_trade'] = np.nan
 
-        all_trades_list = []
+        # all_trades_list = []
         for name, sub_df in self.df.groupby(by='trade_grouper'):
 
             entry_price = self.df[self.df.index==name]['px_returns_calcs'].values[0]
@@ -110,9 +111,10 @@ class TradingStrategy():
                     sl_trigger_time = sub_df[~(sub_df['sl_trigger'] < sub_df['low'])].index[0] # when stop loss was triggered
                     sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index # all the datapoints subsequently affected by stop loss
 
-                    self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = -1 # create exit point when sl is hit
-                    self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "sell" # create exit point when sl is hit
-                    self.df.loc[sl_trigger_time, 'sl_hit'] = True # flag stop loss being hit
+                    #self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = 0 # create exit point when sl is hit
+                    #self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "hold" # create exit point when sl is hit
+                    self.df.loc[sl_trigger_time, 'sl_hit'] = -1 # flag stop loss being hit
+                    self.df.loc[sl_trigger_time, 'sl_trade'] = "stop_sell" # sl trade type
                     self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
                     
                     print(f'Stop loss triggered - closing long ({direction}) position')
@@ -130,9 +132,10 @@ class TradingStrategy():
                     sl_trigger_time = sub_df[~(sub_df['sl_trigger'] > sub_df['high'])].index[0] # when stop loss was triggered
                     sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index  # all the datapoints subsequently affected by stop loss
 
-                    self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = 1 # create exit point when sl is hit
-                    self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "buy" # create exit point when sl is hit
-                    self.df.loc[sl_trigger_time, 'sl_hit'] = True # flag stop loss being hit
+                    #self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = 0 # create exit point when sl is hit
+                    #self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "hold" # create exit point when sl is hit
+                    self.df.loc[sl_trigger_time, 'sl_hit'] = +1 # flag stop loss being hit
+                    self.df.loc[sl_trigger_time, 'sl_trade'] = "stop_buy" # sl trade type
                     self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
                     
                     print(f'Stop loss triggered - closing short ({direction}) position')
@@ -257,6 +260,42 @@ class TradingStrategy():
                     row=2, 
                     col=1
             )
+
+            # add stop loss
+            if self.stop_loss >0:
+                fig.add_scatter(
+                    x=self.df.index, 
+                    y=self.df['close']+500, 
+                    showlegend=False, 
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        # I want the color to be red if trade is a sell
+                        color=(
+                            (self.df['sl_hit'] == 1)).astype('int'),
+                        colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
+                        symbol=105   
+                        ),
+                        row=2, 
+                        col=1
+                )
+
+                fig.add_scatter(
+                    x=self.df.index, 
+                    y=self.df['close']-500, 
+                    showlegend=False, 
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        # I want the color to be red if trade is a sell
+                        color=(
+                            (self.df['sl_hit'] == -1)).astype('int'),
+                        colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
+                        symbol=106   
+                        ),
+                        row=2, 
+                        col=1
+                )
 
             # add strategy returns
             fig.add_scatter(
