@@ -54,12 +54,20 @@ class TradingStrategy():
             self.df['px_returns_calcs']  = np.where(
                 self.df['EMACrossOver_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
 
+            self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
         elif execution_type == 'current_bar_close':
             self.df['px_returns_calcs'] = self.df['close'].copy()
 
-        self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+            self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
+        elif execution_type is None:
+            # skip recalculation pf px_returns_calcs
+            pass
 
         self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
+
+        self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[['EMACrossOver_returns']].transform(np.sum)
 
         self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
         # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
@@ -81,14 +89,14 @@ class TradingStrategy():
 
         # scenario where no stop loss is present, invested position is the same as the signal output
         # keep this column for sanity check later
-        self.df['_new_position'] = self.df[f'{self.strategy}_new_position'].copy()
-        self.df['_trades'] = self.df[f'{self.strategy}_trades'].copy()
-        self.df['_signal'] = self.df[f'{self.strategy}_signal'].copy()
+        # self.df['_new_position'] = self.df[f'{self.strategy}_new_position'].copy()
+        # self.df['_trades'] = self.df[f'{self.strategy}_trades'].copy()
+        # self.df['_signal'] = self.df[f'{self.strategy}_signal'].copy()
 
 
         # col to keep track of stop loss trigger
         self.df['sl_trigger'] = np.nan
-        self.df['sl_hit'] = np.nan
+        self.df['sl_hit'] = 0
         self.df['sl_trade'] = np.nan
 
         # all_trades_list = []
@@ -105,7 +113,7 @@ class TradingStrategy():
                 self.df.loc[sub_df.index, 'sl_trigger'] = sl_price
 
                 if (sub_df['sl_trigger'] < sub_df['low']).sum() == sub_df.shape[0]:
-                    print(f'Long ({direction}) position held until signal reversed')
+                    if self.print_trades: print(f'Long ({direction}) position held until signal reversed')
                     
                 else:
                     sl_trigger_time = sub_df[~(sub_df['sl_trigger'] < sub_df['low'])].index[0] # when stop loss was triggered
@@ -117,7 +125,7 @@ class TradingStrategy():
                     self.df.loc[sl_trigger_time, 'sl_trade'] = "stop_sell" # sl trade type
                     self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
                     
-                    print(f'Stop loss triggered - closing long ({direction}) position')
+                    if self.print_trades: print(f'Stop loss triggered - closing long ({direction}) position')
 
             elif direction < 0:
 
@@ -126,7 +134,7 @@ class TradingStrategy():
                 self.df.loc[sub_df.index, 'sl_trigger'] = sl_price
 
                 if (sub_df['sl_trigger'] > sub_df['high']).sum() == sub_df.shape[0]:
-                    print(f'Short ({direction}) position held until signal reversed')
+                    if self.print_trades: print(f'Short ({direction}) position held until signal reversed')
 
                 else:
                     sl_trigger_time = sub_df[~(sub_df['sl_trigger'] > sub_df['high'])].index[0] # when stop loss was triggered
@@ -138,17 +146,38 @@ class TradingStrategy():
                     self.df.loc[sl_trigger_time, 'sl_trade'] = "stop_buy" # sl trade type
                     self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
                     
-                    print(f'Stop loss triggered - closing short ({direction}) position')
+                    if self.print_trades: print(f'Stop loss triggered - closing short ({direction}) position')
 
         # recalculate performance with stop losses
         self._calculate_performance(self.execution_type)
 
 
-    def add_strategy(self, strategy, stop_loss=0, execution_type='next_bar_open', **indicators):
+    def _add_transaction_costs(self, comms_bps):
+        '''
+        commission: float, execution cost in basis points
+        '''
+
+        self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
+        self.df['total_comms'] = self.comms_pcgt * self.df['number_transaction']
+
+        # add column to preserve original returns for checks
+        self.df['returns_before_tr'] = self.df['returns'].copy()
+
+        self.df['returns'] = self.df['returns'] - self.df['total_comms']
+
+        # recalculate performance with stop losses
+        self._calculate_performance(None)
+
+
+    def add_strategy(self, strategy, stop_loss=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
 
         self.strategy = strategy
         self.execution_type = execution_type ### self.execution_type
         self.stop_loss = stop_loss
+        self.comms_bps = comms_bps
+        self.print_trades = print_trades
+        # transform basis points commission in percentage
+        self.comms_pcgt = comms_bps/10000
 
         if self.strategy == 'EMACrossOver':
 
@@ -178,7 +207,9 @@ class TradingStrategy():
         if stop_loss>0: self._add_stop_losses(self.stop_loss)
 
         # add transaction costs
-    
+        if comms_bps!=0: 
+            self._add_transaction_costs(self.comms_bps)
+
 
     def trading_chart(self, plot_strategy=False, **indicators):
 
@@ -186,10 +217,10 @@ class TradingStrategy():
         plot_indic_color = ['#CCFFFF', '#FFCCFF']
 
         fig = make_subplots(
-            rows=2, 
+            rows=3, 
             cols=1,
             shared_xaxes=True,
-            row_heights=[0.2, 0.8],
+            row_heights=[0.2, 0.6, 0.2],
             vertical_spacing=0.02
         )
 
@@ -297,18 +328,39 @@ class TradingStrategy():
                         col=1
                 )
 
+
+
             # add strategy returns
             fig.add_scatter(
                 x=self.df.index,
                 y=self.df[f'{self.strategy}_cum_performance'],
                 name='cum_performance',
+                row=3,
+                col=1
+            )
+
+            # add trades perfomance
+            fig.add_scatter(
+                x=self.df.index,
+                y=self.df[f'{self.strategy}_trade_performance'],
+                name='trades_performance',
+                mode='markers',
+                marker=dict(
+                    size=10,
+                    # I want the color to be red if trade is a sell
+                    color=(
+                        (self.df['number_transaction'] > 0)).astype('int'),
+                    colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#1184e8']],
+                    symbol=0   
+                    ),
                 row=1,
                 col=1
             )
 
+
         # general layout
         fig.update_layout(
-            width=1200,
+            width=1400,
             height=500,
             title=f'<b>{self.strategy} Strategy</b>',
             title_x=.5,
