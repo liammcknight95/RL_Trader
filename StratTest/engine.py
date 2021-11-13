@@ -50,34 +50,6 @@ class TradingStrategy():
                     or low depending on the trade directions         
         '''
 
-        if execution_type == 'next_bar_open':
-            self.df['px_returns_calcs']  = np.where(
-                self.df['EMACrossOver_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
-
-            self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
-
-        elif execution_type == 'current_bar_close':
-            self.df['px_returns_calcs'] = self.df['close'].copy()
-
-            self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
-
-        elif execution_type is None:
-            # skip recalculation pf px_returns_calcs
-            pass
-
-        self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
-
-        self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[['EMACrossOver_returns']].transform(np.sum)
-
-        self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
-        # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
-
-        # np.exp(self.df['returns'].cumsum()).plot(figsize=(8,4), legend=True) # reverse log returns to prices
-        # self.df[f'{self.strategy}_cum_performance'].plot(legend=True)
-
-
-    def _add_stop_losses(self, stop_loss):
-
         # get positions in the dataframe where indicator generates signals
         open_trades_idx = np.where(self.df[f'{self.strategy}_new_position']!=0)[0]
         # -2 because of shape is n rows and df is 0 indexed and because we do + 1 later - avoid out of bound error
@@ -86,6 +58,38 @@ class TradingStrategy():
         self.df['trade_grouper'] = np.nan
         self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index
         self.df['trade_grouper'] = self.df['trade_grouper'].fillna(method='ffill')
+
+
+        if execution_type is None:
+            # skip recalculation pf px_returns_calcs
+            pass
+        
+        else:
+            if execution_type == 'next_bar_open':
+                self.df['px_returns_calcs']  = np.where(
+                    self.df['EMACrossOver_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
+
+                self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
+            elif execution_type == 'current_bar_close':
+                self.df['px_returns_calcs'] = self.df['close'].copy()
+
+                self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
+
+
+            self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
+
+            self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[['EMACrossOver_returns']].transform(np.sum)
+
+            self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
+            # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
+
+            # np.exp(self.df['returns'].cumsum()).plot(figsize=(8,4), legend=True) # reverse log returns to prices
+            # self.df[f'{self.strategy}_cum_performance'].plot(legend=True)
+
+
+    def _add_stop_losses(self, stop_loss):
 
         # scenario where no stop loss is present, invested position is the same as the signal output
         # keep this column for sanity check later
@@ -200,7 +204,7 @@ class TradingStrategy():
                 self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
                 np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
 
-        # calculate strategy performance
+        # calculate strategy performance ## TODO check if this is needed
         self._calculate_performance(execution_type=self.execution_type)
 
         # add stop loss
@@ -360,8 +364,8 @@ class TradingStrategy():
 
         # general layout
         fig.update_layout(
-            width=1400,
-            height=500,
+            width=1200,
+            height=700,
             title=f'<b>{self.strategy} Strategy</b>',
             title_x=.5,
             yaxis_title='USDT/BTC',
@@ -370,3 +374,90 @@ class TradingStrategy():
         )
 
         return fig
+
+
+    def strategy_metrics(self):
+        pass
+
+
+
+## trading bot
+def tr(data):
+    data['previous_close'] = data['close'].shift(1)
+    data['high-low'] = abs(data['high'] - data['low'])
+    data['high-pc'] = abs(data['high'] - data['previous_close'])
+    data['low-pc'] = abs(data['low'] - data['previous_close'])
+
+    tr = data[['high-low', 'high-pc', 'low-pc']].max(axis=1)
+
+    return tr
+
+def atr(data, period):
+    data['tr'] = tr(data)
+    atr = data['tr'].rolling(period).mean()
+
+    return atr
+
+def supertrend(df, period=7, atr_multiplier=3):
+    hl2 = (df['high'] + df['low']) / 2
+    df['atr'] = atr(df, period)
+    df['upperband'] = hl2 + (atr_multiplier * df['atr'])
+    df['lowerband'] = hl2 - (atr_multiplier * df['atr'])
+    df['in_uptrend'] = True
+
+    for current in range(1, len(df.index)):
+        previous = current - 1
+
+        if df['close'][current] > df['upperband'][previous]:
+            df['in_uptrend'][current] = True
+        elif df['close'][current] < df['lowerband'][previous]:
+            df['in_uptrend'][current] = False
+        else:
+            df['in_uptrend'][current] = df['in_uptrend'][previous]
+
+            if df['in_uptrend'][current] and df['lowerband'][current] < df['lowerband'][previous]:
+                df['lowerband'][current] = df['lowerband'][previous]
+
+            if not df['in_uptrend'][current] and df['upperband'][current] > df['upperband'][previous]:
+                df['upperband'][current] = df['upperband'][previous]
+        
+    return df
+
+
+in_position = False
+
+def check_buy_sell_signals(df):
+    global in_position
+
+    print("checking for buy and sell signals")
+    print(df.tail(5))
+    last_row_index = len(df.index) - 1
+    previous_row_index = last_row_index - 1
+
+    if not df['in_uptrend'][previous_row_index] and df['in_uptrend'][last_row_index]:
+        print("changed to uptrend, buy")
+        if not in_position:
+            order = exchange.create_market_buy_order('ETH/USD', 0.05)
+            print(order)
+            in_position = True
+        else:
+            print("already in position, nothing to do")
+    
+    if df['in_uptrend'][previous_row_index] and not df['in_uptrend'][last_row_index]:
+        if in_position:
+            print("changed to downtrend, sell")
+            order = exchange.create_market_sell_order('ETH/USD', 0.05)
+            print(order)
+            in_position = False
+        else:
+            print("You aren't in position, nothing to sell")
+
+def run_bot():
+    print(f"Fetching new bars for {datetime.now().isoformat()}")
+    bars = exchange.fetch_ohlcv('ETH/USDT', timeframe='1m', limit=100)
+    df = pd.DataFrame(bars[:-1], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+    supertrend_data = supertrend(df)
+    
+    check_buy_sell_signals(supertrend_data)
