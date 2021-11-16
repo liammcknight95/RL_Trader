@@ -10,9 +10,9 @@ from plotly.subplots import make_subplots
 
 class TradingStrategy():
 
-    def __init__(self, data):
+    def __init__(self, data, printout=False):
         self.df = data # dataframe with open, high, low, close, volume columns
-
+        self.printout = printout
 
     def add_indicator(self, indicator, **params):
 
@@ -39,7 +39,7 @@ class TradingStrategy():
             self.df[f'ema_{params["window"]}'] = ema_indicator.ema_indicator()
 
 
-        print(f'Adding {indicator} with: {params}')
+        if self.printout: print(f'Adding {indicator} with: {params}')
 
 
     def _calculate_performance(self, execution_type):
