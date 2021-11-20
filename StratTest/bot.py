@@ -5,27 +5,27 @@ import pandas as pd
 import ccxt
 import config
 
-## Exchange connectivity
-exchange = ccxt.binance(
-    {
-        'apiKey': config.BINANCE_API_KEY,
-        'secret': config.BINANCE_SECRET_KEY
-    }
-)
+
 
 class TradingBot():
 
-    def __init__(self, strategy, indicator, **params):
+    def __init__(self, strategy, indicator, sandbox=True, **params):
+
+        ## Exchange connectivity
+        self.exchange = ccxt.bitstamp(
+            {
+                'apiKey': config.BITSTAMP_API_KEY,
+                'secret': config.BITSTAMP_API_SECRET
+            }
+        )
+        self.exchange.set_sandbox_mode(sandbox)
 
         self.strategy = strategy
         self.indicator = indicator
         self.params = params
+        self.in_position = False
         
-        # logger_name = f'{self.strategy} - {self.indicator} logger - {datetime.now().isoformat()}'
         self.logger = logging.getLogger('Trading Bot')
-        # self.bot_actions_handler = logging.FileHandler(f'{config.directory_path}/StratTest/Logging/{logger_name}.log')
-        # self.bot_actions_handler.setLevel(logging.DEBUG)
-        # self.logger.addHandler(self.bot_actions_handler)
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
 
 
@@ -50,37 +50,51 @@ class TradingBot():
 
     def _check_buy_sell_signals(self, df):
 
-        ## TODO check logic for positioning
+        ## TODO check logic for positioning - before last period?
+        ## TODO when crossing happens, in current bar you can be kicked out several times Wait for
+        ## some form of confirmation?
 
-        #print("checking for buy and sell signals")
-        # print(df.tail(5))
         last_period = df.index[-1]
         before_last_period = df.index[-2]
 
         if df.loc[before_last_period][f'{self.strategy}_new_position']==1:
-            print("changed to uptrend, buy")
-            # order = exchange.create_market_buy_order('ETH/USD', 0.05)
-            # print(order)
-            self.logger.info(f"New BUY order placed at {datetime.now().isoformat()}")
-            print('placed a new buy order')
+
+            if not self.in_position:
+                ## check if already in position, avoid double orders on same bar refreshing with new signal every time
+                ## order = exchange.create_market_buy_order('ETH/USD', 0.05)
+                ## print(order)
+                
+                self.logger.info(f"New BUY order placed at {datetime.now().isoformat()}")
+                print(f'{datetime.now().isoformat()} - placed a new buy order')
+                self.in_position = True
+
+            else:
+                self.logger.info(f"No new orders, current position: {self.in_position}")
+
 
         elif df.loc[before_last_period][f'{self.strategy}_new_position']==-1:
-            print("changed to downtrend, sell")
 
-            # order = exchange.create_market_sell_order('ETH/USD', 0.05)
-            # print(order)
-            self.logger.info(f"New SELL order placed at {datetime.now().isoformat()}")
-            print("placed a new sell order")
+            if self.in_position:
+
+                # order = exchange.create_market_sell_order('ETH/USD', 0.05)
+                # print(order)
+                self.logger.info(f"New SELL order placed at {datetime.now().isoformat()}")
+                print(f'{datetime.now().isoformat()} - placed a new sell order')
+                self.in_position = False
+
+            else:
+                self.logger.info(f"No new orders, current position: {self.in_position}")
             
+
         else:
-            self.logger.info(f"No new orders")
+            self.logger.info(f"No new orders, current position: {self.in_position}")
 
 
     def run_bot(self, pair):
 
         try:
-            #print(f"Fetching new bars for {datetime.now().isoformat()}")
-            bars = exchange.fetch_ohlcv(pair, timeframe='1m', limit=100) # most recent candle keeps evolving
+
+            bars = self.exchange.fetch_ohlcv(pair, timeframe='1m', limit=100) # most recent candle keeps evolving
             self.bars_df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             self.bars_df['timestamp'] = pd.to_datetime(self.bars_df['timestamp'], unit='ms')
             self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}")

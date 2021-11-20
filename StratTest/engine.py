@@ -14,6 +14,30 @@ class TradingStrategy():
         self.df = data # dataframe with open, high, low, close, volume columns
         self.printout = printout
 
+
+    def resample_data(self, freq):
+
+        ''' Method to be called if the dataframe is at a lower granularity than desired dataset '''
+        
+        self.df = self.df.resample(freq, label='right').agg( # closing time of candlestick
+            {
+            'Mid_Price': ['last', 'first', np.max, np.min], 
+            # 'volume': np.sum
+            }
+        )
+
+        self.df.columns = self.df.columns.get_level_values(1)
+
+        self.df['close'] = self.df['last']
+        self.df['open'] = self.df['first']
+        self.df['high'] = self.df['amax']
+        self.df['low'] = self.df['amin']
+        # data_resampled['volume'] = data_resampled['sum']
+        self.df.index.name = 'datetime'
+
+        self.df = self.df[['open', 'high', 'low', 'close']]
+        
+
     def add_indicator(self, indicator, **params):
 
         if indicator == 'BollingerBands':
@@ -67,7 +91,7 @@ class TradingStrategy():
         else:
             if execution_type == 'next_bar_open':
                 self.df['px_returns_calcs']  = np.where(
-                    self.df['EMACrossOver_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
+                    self.df[f'{self.strategy}_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
 
                 self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
 
@@ -80,7 +104,7 @@ class TradingStrategy():
 
             self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
 
-            self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[['EMACrossOver_returns']].transform(np.sum)
+            self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[[f'{self.strategy}_returns']].transform(np.sum)
 
             self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
             # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
@@ -161,7 +185,11 @@ class TradingStrategy():
         commission: float, execution cost in basis points
         '''
 
-        self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
+        if self.stop_loss>0: 
+            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
+        else:
+            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
+            
         self.df['total_comms'] = self.comms_pcgt * self.df['number_transaction']
 
         # add column to preserve original returns for checks
@@ -183,7 +211,7 @@ class TradingStrategy():
         # transform basis points commission in percentage
         self.comms_pcgt = comms_bps/10000
 
-        if self.strategy == 'EMACrossOver':
+        if self.strategy == 'EMACrossOverLS':
 
             self.short_ema = indicators['short_ema']
             self.long_ema = indicators['long_ema']
@@ -203,6 +231,28 @@ class TradingStrategy():
             self.df[f'{self.strategy}_new_position'] = np.where(
                 self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
                 np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
+
+
+        elif self.strategy == 'EMACrossOverLO':
+
+            self.short_ema = indicators['short_ema']
+            self.long_ema = indicators['long_ema']
+
+            ## Generate Signals
+            # signal: tiemseries of +1 when long, -1 when short, 0 when neutral
+            self.df[f'{self.strategy}_signal'] = np.where(
+                self.df[self.short_ema] > self.df[indicators['long_ema']], 1, 0)
+
+            # trades: flag when a new trade is generated - descriptive
+            self.df[f'{self.strategy}_trades'] = np.where(
+                self.df[f'{self.strategy}_signal'].diff() > 0, 'buy', 
+                np.where(self.df[f'{self.strategy}_signal'].diff() < 0, 'sell', 'hold'))
+
+            # trades: flag when a new trade is generated - numeric
+            self.df[f'{self.strategy}_new_position'] = np.where(
+                self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
+                np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
+
 
         # calculate strategy performance ## TODO check if this is needed
         self._calculate_performance(execution_type=self.execution_type)
@@ -225,7 +275,12 @@ class TradingStrategy():
             cols=1,
             shared_xaxes=True,
             row_heights=[0.2, 0.6, 0.2],
-            vertical_spacing=0.02
+            vertical_spacing=0.02,
+            specs=[
+                [{"secondary_y": True}],
+                [{"secondary_y": False}],
+                [{"secondary_y": False}],
+            ]
         )
 
         fig.add_trace(
@@ -358,7 +413,21 @@ class TradingStrategy():
                     symbol=0   
                     ),
                 row=1,
-                col=1
+                col=1,
+                secondary_y=False
+            )
+
+            # add strategy position
+            fig.add_scatter(
+                x=self.df.index,
+                y=self.df[f'{self.strategy}_signal'],
+                opacity=0.4,
+                name='position',
+                mode='lines',
+                marker=dict(color=('#ffeded')),
+                row=1,
+                col=1,
+                secondary_y=True
             )
 
 
@@ -378,86 +447,3 @@ class TradingStrategy():
 
     def strategy_metrics(self):
         pass
-
-
-
-## trading bot
-def tr(data):
-    data['previous_close'] = data['close'].shift(1)
-    data['high-low'] = abs(data['high'] - data['low'])
-    data['high-pc'] = abs(data['high'] - data['previous_close'])
-    data['low-pc'] = abs(data['low'] - data['previous_close'])
-
-    tr = data[['high-low', 'high-pc', 'low-pc']].max(axis=1)
-
-    return tr
-
-def atr(data, period):
-    data['tr'] = tr(data)
-    atr = data['tr'].rolling(period).mean()
-
-    return atr
-
-def supertrend(df, period=7, atr_multiplier=3):
-    hl2 = (df['high'] + df['low']) / 2
-    df['atr'] = atr(df, period)
-    df['upperband'] = hl2 + (atr_multiplier * df['atr'])
-    df['lowerband'] = hl2 - (atr_multiplier * df['atr'])
-    df['in_uptrend'] = True
-
-    for current in range(1, len(df.index)):
-        previous = current - 1
-
-        if df['close'][current] > df['upperband'][previous]:
-            df['in_uptrend'][current] = True
-        elif df['close'][current] < df['lowerband'][previous]:
-            df['in_uptrend'][current] = False
-        else:
-            df['in_uptrend'][current] = df['in_uptrend'][previous]
-
-            if df['in_uptrend'][current] and df['lowerband'][current] < df['lowerband'][previous]:
-                df['lowerband'][current] = df['lowerband'][previous]
-
-            if not df['in_uptrend'][current] and df['upperband'][current] > df['upperband'][previous]:
-                df['upperband'][current] = df['upperband'][previous]
-        
-    return df
-
-
-in_position = False
-
-def check_buy_sell_signals(df):
-    global in_position
-
-    print("checking for buy and sell signals")
-    print(df.tail(5))
-    last_row_index = len(df.index) - 1
-    previous_row_index = last_row_index - 1
-
-    if not df['in_uptrend'][previous_row_index] and df['in_uptrend'][last_row_index]:
-        print("changed to uptrend, buy")
-        if not in_position:
-            order = exchange.create_market_buy_order('ETH/USD', 0.05)
-            print(order)
-            in_position = True
-        else:
-            print("already in position, nothing to do")
-    
-    if df['in_uptrend'][previous_row_index] and not df['in_uptrend'][last_row_index]:
-        if in_position:
-            print("changed to downtrend, sell")
-            order = exchange.create_market_sell_order('ETH/USD', 0.05)
-            print(order)
-            in_position = False
-        else:
-            print("You aren't in position, nothing to sell")
-
-def run_bot():
-    print(f"Fetching new bars for {datetime.now().isoformat()}")
-    bars = exchange.fetch_ohlcv('ETH/USDT', timeframe='1m', limit=100)
-    df = pd.DataFrame(bars[:-1], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-
-    supertrend_data = supertrend(df)
-    
-    check_buy_sell_signals(supertrend_data)
