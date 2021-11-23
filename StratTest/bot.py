@@ -48,7 +48,44 @@ class TradingBot():
         return self.bars_df
 
 
-    def _check_buy_sell_signals(self, df):
+    def get_ob_and_sizing(self, pair, owned_ccy_size):
+        self.order_book = self.exchange.fetchOrderBook(pair)
+
+        self.ob_datetime = self.order_book['datetime']
+
+        self.top_ask_px = self.order_book['asks'][0][0]
+        self.top_ask_quantity = self.order_book['asks'][0][1]
+
+        self.top_bid_px = self.order_book['bids'][0][0]
+        self.top_bid_quantity = self.order_book['bids'][0][1]
+
+        self.top_mid_px = (self.top_ask_px + self.top_bid_px) / 2
+        self.top_ob_spread = (self.top_ask_px - self.top_bid_px) / self.top_mid_px # TODO check for spread when placing order
+
+        # current_mid_price : 1 BTC = my_size : x BTC
+        self.trade_size = owned_ccy_size/self.top_mid_px
+
+
+
+    def check_existing_orders(self, pair):
+        ''' Only one open order per pair.  Orders are listed chronologically (ie oldest order with index 0)'''
+
+        self.open_orders = self.exchange.fetchOpenOrders(pair)
+
+        # check if current selected pair has more than one active order
+        self.pair_open_orders = [order for order in self.open_orders if order['symbol']==pair]
+
+        assert len(self.pair_open_orders) <= 1, f''' Too many orders ({len(self.pair_open_orders)}) on {pair} - logic did not work correctly. Check open orders immediately. exchange.fetchOpenOrders(symbol) '''
+
+
+    ## TODO ORDER MANAGEMENT METHOD:
+    ## if signal and no order in place, place one
+    ## if signal, but order already in place for that signalled direction, ignore (maybe based on next bar opening and/or some stop losses)
+    ## if signal, but order in place for opposition direction, cancel order and create new order on opposite direction
+    ## if no signal, ignore
+    ## check against open orders, live orders and past trade. Essential: order ID, side, amount (filled) and state of the order
+
+    def _check_buy_sell_signals(self, df, pair, owned_ccy_size):
 
         ## TODO check logic for positioning - before last period?
         ## TODO when crossing happens, in current bar you can be kicked out several times Wait for
@@ -60,12 +97,22 @@ class TradingBot():
         if df.loc[before_last_period][f'{self.strategy}_new_position']==1:
 
             if not self.in_position:
+                # get order book and sizing
+                self.get_ob_and_sizing(pair, owned_ccy_size)
+
+
+
                 ## check if already in position, avoid double orders on same bar refreshing with new signal every time
-                ## order = exchange.create_market_buy_order('ETH/USD', 0.05)
-                ## print(order)
+                # place limit buy order 10bps above current ask price - provide some buffer for signal confirmation
+                self.live_order = self.exchange.createLimitOrder(
+                    pair,
+                    side='buy',
+                    amount=self.trade_size, 
+                    price=self.top_ask_px * 1.001
+                )
                 
-                self.logger.info(f"New BUY order placed at {datetime.now().isoformat()}")
-                print(f'{datetime.now().isoformat()} - placed a new buy order')
+                self.logger.info(f"New BUY order placed at {datetime.now().isoformat()}: {self.live_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}")
+                print(f'{datetime.now().isoformat()} - placed a new buy order: {self.live_order}')
                 self.in_position = True
 
             else:
@@ -75,9 +122,17 @@ class TradingBot():
         elif df.loc[before_last_period][f'{self.strategy}_new_position']==-1:
 
             if self.in_position:
+                # get order book and sizing
+                order_closing_size = self.live_order['amount']
 
-                # order = exchange.create_market_sell_order('ETH/USD', 0.05)
-                # print(order)
+                # place limit buy order 10bps below current bid price - provide some buffer for end of signal confirmation
+                order = self.exchange.createLimitOrder(
+                    pair,
+                    side='sell',
+                    amount=order_closing_size, 
+                    price=self.top_bid_px * 0.999
+                )
+
                 self.logger.info(f"New SELL order placed at {datetime.now().isoformat()}")
                 print(f'{datetime.now().isoformat()} - placed a new sell order')
                 self.in_position = False
@@ -90,7 +145,7 @@ class TradingBot():
             self.logger.info(f"No new orders, current position: {self.in_position}")
 
 
-    def run_bot(self, pair):
+    def run_bot(self, pair, size):
 
         try:
 
@@ -101,7 +156,7 @@ class TradingBot():
             
             indicator_df = self._get_crossover()
             
-            self._check_buy_sell_signals(indicator_df)
+            self._check_buy_sell_signals(indicator_df, pair, size)
             self.logger.info('#####')
         
         except Exception as e:
