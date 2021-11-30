@@ -24,8 +24,7 @@ class TradingBot():
         self.indicator = indicator
         self.params = params
         self.in_position = False
-        self.sl_price = 0
-        self.verify_execution = False
+        self.signal_time = pd.Timestamp(datetime.now())
         
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
@@ -68,7 +67,6 @@ class TradingBot():
         self.trade_size = owned_ccy_size/self.top_mid_px
 
 
-
     def check_open_orders(self, pair):
         ''' Only one open order per pair.  Orders are listed chronologically (ie oldest order with index 0)'''
 
@@ -83,11 +81,8 @@ class TradingBot():
     def order_executed_check(self, pair, id):
         ''' Check if a certain order 'id' has been executed '''
 
-        if self.verify_execution:
-            self.executed_orders = self.exchange.fetchMyTrades(pair)
-            return len([order['id'] for order in self.executed_orders if order['id']==id]) == 1
-
-            ## TODO check if any buy, sell or stop loss has been executed
+        self.executed_orders = self.exchange.fetchMyTrades(pair)
+        return len([order['id'] for order in self.executed_orders if order['id']==id]) == 1
 
 
     ## TODO ORDER MANAGEMENT METHOD:
@@ -95,25 +90,20 @@ class TradingBot():
 
     def _check_buy_sell_signals(self, df, pair, owned_ccy_size, sl_pctg, sl_type):
 
-        ## TODO check logic for positioning - before last period?
-        ## TODO when crossing happens, in current bar you can be kicked out several times Wait for
-        ## some form of confirmation?
+        current_period = df.index[-1] # current bar - used for stop losses and reversals
+        previous_period = df.index[-2] # previous bar - used to check signals
 
-        last_period = df.index[-1]
-        before_last_period = df.index[-2]
-
-        self.previous_price = self.current_price
-        self.current_price = df.loc[before_last_period]['close']
-
+        self.current_price = df.loc[current_period]['close']
+        self.previous_price = df.loc[previous_period]['close']
 
         if not self.in_position:
             # if not in position, check the signal
 
-            if df.loc[before_last_period][f'{self.strategy}_new_position']==1:
+            if df.loc[previous_period][f'{self.strategy}_new_position']==1 and df.loc[previous_period]['timestamp']>self.signal_time:
+                # if signal is 1 and has been generated on a new bar - new timestamp
 
                 # get order book and sizing
                 self.get_ob_and_sizing(pair, owned_ccy_size)
-
 
                 self.order_price = self.top_ask_px * 1.001
                 ## check if already in position, avoid double orders on same bar refreshing with new signal every time
@@ -131,6 +121,7 @@ class TradingBot():
                 self.logger.info(f"New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
                 print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                 self.in_position = True
+                self.signal_time = df.loc[previous_period]['timestamp']
 
             else:
                 self.logger.info(f"No new orders, current position: {self.in_position}")
@@ -144,14 +135,14 @@ class TradingBot():
                 # if in position and order has been executed monitor price level and adjust stop loss level accordingly
                 # if one of the 2 conditions is hit, close the position with a market order
 
-                if sl_type == 'trailing' and self.current_price > self.previous_price and self.current_price > self.order_price and self.in_position:
+                if sl_type == 'trailing' and self.current_price > self.previous_price and self.current_price > self.order_price:
                     # with trailing stop loss, if live order, update stop loss price if trade currently in profit
-                    self.sl_price = self.buy_order['price'] * (1 - sl_pctg)
+                    self.sl_price = self.current_price * (1 - sl_pctg)
                     self.logger.info(f"Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price}")
 
 
                 
-                if df.loc[before_last_period][f'{self.strategy}_new_position']==-1 or self.current_price < self.sl_price:
+                if df.loc[previous_period][f'{self.strategy}_new_position']==-1 or self.current_price <= self.sl_price:
                     # when signal reverses, close the position with sell market order
 
                     # retrieve a fresh order book
@@ -168,6 +159,7 @@ class TradingBot():
                     
                     print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
 
+                    # reset positioning
                     self.in_position = False
                     self.buy_order = {}
                     self.sl_price = 0
@@ -179,13 +171,14 @@ class TradingBot():
             else:
                 # if order has not been executed yet, check if keeping it open or cancelling it
 
-                if df.loc[before_last_period][f'{self.strategy}_new_position']>-1 and self.current_price < self.sl_price:
+                if df.loc[previous_period][f'{self.strategy}_new_position']>-1 and self.current_price > self.sl_price:
                     self.logger.info(f"Order {self.buy_order['id']}: PLACED BUT NOT yet executed at {self.buy_order['price']}. Trying to execute it")
                 
                 else:
                     self.cancel_order(self.buy_order['id'])
                     self.logger.info(f"CANCELLING order {self.buy_order['id']}: at price {self.buy_order['price']} due to adverse price movements")
                     
+                    # reset positioning
                     self.in_position = False
                     self.buy_order = {}
                     self.sl_price = 0
