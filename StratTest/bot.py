@@ -8,6 +8,8 @@ import config
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
 # engine and make sure there's no gaps
+# TODO using order ID now, check if I can make use of transaction id
+
 class TradingBot():
 
     def __init__(self, strategy, indicator, sandbox=True, **params):

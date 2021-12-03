@@ -218,14 +218,17 @@ class TradingStrategy():
 
         if self.strategy == 'EMACrossOverLS':
 
-            self.short_ema = indicators['short_ema']
-            self.long_ema = indicators['long_ema']
+            self.short_ema = f"ema_{indicators['short_ema']}"
+            self.long_ema = f"ema_{indicators['long_ema']}"
+
+            self.add_indicator('EMAIndicator', window=indicators['short_ema'])
+            self.add_indicator('EMAIndicator', window=indicators['long_ema'])
 
             ## Generate Signals
             # signal: tiemseries of +1 when long, -1 when short, 0 when neutral
             self.df[f'{self.strategy}_signal'] = np.where(
-                self.df[self.short_ema] > self.df[indicators['long_ema']], 1, 
-                np.where(self.df[self.short_ema] < self.df[indicators['long_ema']], -1, 0))
+                self.df[self.short_ema] > self.df[self.long_ema ], 1, 
+                np.where(self.df[self.short_ema] < self.df[self.long_ema ], -1, 0))
 
             # trades: flag when a new trade is generated - descriptive
             self.df[f'{self.strategy}_trades'] = np.where(
@@ -240,13 +243,16 @@ class TradingStrategy():
 
         elif self.strategy == 'EMACrossOverLO':
 
-            self.short_ema = indicators['short_ema']
-            self.long_ema = indicators['long_ema']
+            self.short_ema = f"ema_{indicators['short_ema']}"
+            self.long_ema = f"ema_{indicators['long_ema']}"
+
+            self.add_indicator('EMAIndicator', window=indicators['short_ema'])
+            self.add_indicator('EMAIndicator', window=indicators['long_ema'])
 
             ## Generate Signals
             # signal: tiemseries of +1 when long, -1 when short, 0 when neutral
             self.df[f'{self.strategy}_signal'] = np.where(
-                self.df[self.short_ema] > self.df[indicators['long_ema']], 1, 0)
+                self.df[self.short_ema] > self.df[self.long_ema], 1, 0)
 
             # trades: flag when a new trade is generated - descriptive
             self.df[f'{self.strategy}_trades'] = np.where(
