@@ -6,7 +6,8 @@ import ccxt
 import config
 
 
-
+# TODO check if data from api need to be assigned a time frequency - to align with resample data in 
+# engine and make sure there's no gaps
 class TradingBot():
 
     def __init__(self, strategy, indicator, sandbox=True, **params):
@@ -82,7 +83,7 @@ class TradingBot():
         ''' Check if a certain order 'id' has been executed '''
 
         self.executed_orders = self.exchange.fetchMyTrades(pair)
-        return len([order['id'] for order in self.executed_orders if order['id']==id]) == 1
+        return len([order['order'] for order in self.executed_orders if order['order']==id]) == 1
 
 
     ## TODO ORDER MANAGEMENT METHOD:
@@ -118,7 +119,7 @@ class TradingBot():
                 # set initial stop loss
                 self.sl_price = self.buy_order['price'] * (1 - sl_pctg)
 
-                self.logger.info(f"New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
+                self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
                 print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                 self.in_position = True
                 self.signal_time = df.loc[previous_period]['timestamp']
@@ -138,7 +139,7 @@ class TradingBot():
                 if sl_type == 'trailing' and self.current_price > self.previous_price and self.current_price > self.order_price:
                     # with trailing stop loss, if live order, update stop loss price if trade currently in profit
                     self.sl_price = self.current_price * (1 - sl_pctg)
-                    self.logger.info(f"Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price}")
+                    self.logger.info(f"------- Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price}")
 
 
                 
@@ -155,7 +156,7 @@ class TradingBot():
                         self.buy_order['amount']
                     )
 
-                    self.logger.info(f"SELL ORDER PLACED at {datetime.now().isoformat()}: id: {self.sell_order['id']}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
+                    self.logger.info(f"----- SELL ORDER PLACED at {datetime.now().isoformat()}: id: {self.sell_order['id']}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
                     
                     print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
 
@@ -175,8 +176,8 @@ class TradingBot():
                     self.logger.info(f"Order {self.buy_order['id']}: PLACED BUT NOT yet executed at {self.buy_order['price']}. Trying to execute it")
                 
                 else:
-                    self.cancel_order(self.buy_order['id'])
-                    self.logger.info(f"CANCELLING order {self.buy_order['id']}: at price {self.buy_order['price']} due to adverse price movements")
+                    self.exchange.cancel_order(self.buy_order['id'])
+                    self.logger.info(f"----- CANCELLING order {self.buy_order['id']}: at price {self.buy_order['price']} due to adverse price movements")
                     
                     # reset positioning
                     self.in_position = False
@@ -186,7 +187,7 @@ class TradingBot():
 
 
 
-    def run_bot(self, pair, size, sl_pctg, sl_type='static'):
+    def run_bot(self, pair, owned_ccy_size, sl_pctg, sl_type='static'):
         '''
         Method that runs the trading bot - to be wrapped inside a scheduler
             pair: str - trading currency pair
@@ -197,14 +198,14 @@ class TradingBot():
 
         try:
 
-            bars = self.exchange.fetch_ohlcv(pair, timeframe='1m', limit=100) # most recent candle keeps evolving
+            bars = self.exchange.fetch_ohlcv(pair, timeframe='30m', limit=50) # most recent candle keeps evolving
             self.bars_df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             self.bars_df['timestamp'] = pd.to_datetime(self.bars_df['timestamp'], unit='ms')
-            self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}")
+            self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
             
             indicator_df = self._get_crossover()
             
-            self._check_buy_sell_signals(indicator_df, pair, size, sl_pctg, sl_type)
+            self._check_buy_sell_signals(indicator_df, pair, owned_ccy_size, sl_pctg, sl_type)
             self.logger.info('#####')
         
         except Exception as e:

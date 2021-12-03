@@ -85,8 +85,10 @@ class TradingStrategy():
 
 
         if execution_type is None:
-            # skip recalculation pf px_returns_calcs
-            pass
+            # use closing pices to calculate returns
+            self.df['px_returns_calcs'] = self.df['close']
+            self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
         
         else:
             if execution_type == 'next_bar_open':
@@ -102,16 +104,19 @@ class TradingStrategy():
 
 
 
-            self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
+        self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
 
-            self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[[f'{self.strategy}_returns']].transform(np.sum)
+        self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[[f'{self.strategy}_returns']].transform(np.sum)
 
-            self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
-            # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
+        self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
+        # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
 
-            # np.exp(self.df['returns'].cumsum()).plot(figsize=(8,4), legend=True) # reverse log returns to prices
-            # self.df[f'{self.strategy}_cum_performance'].plot(legend=True)
+        # np.exp(self.df['returns'].cumsum()).plot(figsize=(8,4), legend=True) # reverse log returns to prices
+        # self.df[f'{self.strategy}_cum_performance'].plot(legend=True)
 
+
+    def _calculate_strat_metrics(self):
+        self.cum_return = self.df[f'{self.strategy}_cum_performance'].dropna().values[-1]
 
     def _add_stop_losses(self, stop_loss):
 
@@ -263,6 +268,8 @@ class TradingStrategy():
         # add transaction costs
         if comms_bps!=0: 
             self._add_transaction_costs(self.comms_bps)
+
+        self._calculate_strat_metrics()
 
 
     def trading_chart(self, plot_strategy=False, **indicators):
