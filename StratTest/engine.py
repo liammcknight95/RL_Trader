@@ -78,28 +78,27 @@ class TradingStrategy():
         # get positions in the dataframe where indicator generates signals
         open_trades_idx = np.where(self.df[f'{self.strategy}_new_position']==1)[0]
         closing_trades_idx = np.where(self.df[f'{self.strategy}_new_position']==-1)[0]
+        between_open_close_idx = np.where(self.df[f'{self.strategy}_signal']!=0)
         # out_market_idx = np.where((self.df[f'{self.strategy}_signal']==0) 
         #     & (self.df[f'{self.strategy}_new_position']!=0))[0]
         print(open_trades_idx)
         print(closing_trades_idx)
 
         self.df['trade_grouper'] = np.nan
-        self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index
-        self.df.loc[self.df.iloc[closing_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index
-        
-        # self.df.loc[self.df.iloc[out_market_idx].index, 'trade_grouper'] = pd.NaT
-        # self.df['trade_grouper'] = self.df['trade_grouper'].fillna(method='ffill')
+        self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index # add grouper at opening
+        self.df.loc[self.df.iloc[closing_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx[:closing_trades_idx.shape[0]]].index # add grouper at closing
+        self.df.loc[self.df.iloc[between_open_close_idx].index, 'trade_grouper'] = self.df.iloc[between_open_close_idx]['trade_grouper'].fillna(method='ffill') # add grouper between
 
 
         # TODO: these assume that order is not cancelled between order being triggered and executed
         if execution_type == 'next_bar_open':
             self.df['px_returns_calcs']  = np.where(
                 self.df[f'{self.strategy}_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
-            self.df['execution_time'] = np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index.shift(1, freq=self.frequency), pd.NaT)
+            self.df['execution_time'] = pd.to_datetime(np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index.shift(1, freq=self.frequency), pd.NaT))
 
         elif execution_type == 'current_bar_close':
             self.df['px_returns_calcs'] = self.df['close'].copy()
-            self.df['execution_time'] = np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index, pd.NaT)
+            self.df['execution_time'] = pd.to_datetime(np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index, pd.NaT))
 
 
         # apply any trading fee after stop loss calculation
@@ -107,17 +106,39 @@ class TradingStrategy():
             self._add_transaction_costs()
 
 
+    def _get_strat_gross_returns(self):
+        ''' 
+        Get strategy gross log returns time series, inclusive of stop losses and execution assumptions (ie current or next close), 
+        but without accounting for any trading costs
+        '''
+
+        # get gross log cumulative returns over time
+        self.df['gross_log_returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
+        self.df[f'{self.strategy}_gross_log_returns'] = self.df['gross_log_returns'] * self.df[f'{self.strategy}_signal'] # accounts for long short
+
+        self.df[f'{self.strategy}_gross_cum_log_returns'] = np.exp(self.df[f'{self.strategy}_gross_log_returns'].cumsum()) # cumulative gross performance when in
+
+
     def _calculate_strat_metrics(self):
 
-        self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+        # get individual trades performances
+        self.trades_df = self.df.groupby('trade_grouper').agg(
+            entry_price=('execution_price', 'first'), 
+            exit_price=('execution_price', 'last'), 
+            trade_len=('trade_grouper', 'count'),
+            direction=('EMACrossOverLO_new_position', 'first'),
+            liquidated_at=('execution_time', 'last')
+        )
 
-        self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal'] # accounts for long short
+        self.trades_df['trades_log_return'] = np.log(self.trades_df['exit_price']) - np.log(self.trades_df['entry_price'])
+        self.trades_df['cum_trades_log_return'] = self.trades_df['trades_log_return'].cumsum()
 
-        self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[[f'{self.strategy}_returns']].transform(np.sum)
+        self.trades_df['trades_pctg_return'] = np.exp(self.trades_df['trades_log_return']) - 1
+        self.trades_df['cum_trades_pctg_return'] = np.exp(self.trades_df['cum_trades_log_return']) - 1
 
-        self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
+        self.cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
 
-        self.cum_return = self.df[f'{self.strategy}_cum_performance'].dropna().values[-1]
 
     def _add_stop_losses(self, stop_loss):
 
@@ -197,9 +218,9 @@ class TradingStrategy():
         else:
             self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
             
-        self.df['total_comms_%'] = self.comms_pcgt * self.df['number_transaction']
+        # self.df['total_comms_%'] = self.comms_pcgt * self.df['number_transaction']
 
-        # recalculate prices where a new position occurs. Increase price when buying and decrease when selling
+        # recalculate prices where a new position occurs. Increase price when buying and decrease when selling (+)
         self.df['execution_price'] = np.where(
             self.df[f'{self.strategy}_new_position']!=0, 
             self.df['px_returns_calcs'] * (1 + (self.comms_pcgt * self.df[f'{self.strategy}_new_position'])),
@@ -276,7 +297,8 @@ class TradingStrategy():
         # if comms_bps!=0: 
         #     self._add_transaction_costs(self.comms_bps)
 
-        self._calculate_strat_metrics()
+        self._get_strat_gross_returns() # get strategy returns time series
+        self._calculate_strat_metrics() # calculate strategy perfomance looking at individual trades
 
 
     def trading_chart(self, plot_strategy=False, **indicators):
@@ -406,25 +428,26 @@ class TradingStrategy():
             # add strategy returns
             fig.add_scatter(
                 x=self.df.index,
-                y=self.df[f'{self.strategy}_cum_performance'],
-                name='cum_performance',
+                y=self.df[f'{self.strategy}_gross_cum_log_returns'],
+                name='gross_performance',
                 row=3,
                 col=1
             )
 
             # add trades perfomance
             fig.add_scatter(
-                x=self.df.index,
-                y=self.df[f'{self.strategy}_trade_performance'],
+                x=self.trades_df.index,#['liquidated_at'],
+                y=self.trades_df['trades_pctg_return'],
                 name='trades_performance',
                 mode='markers',
                 marker=dict(
                     size=10,
-                    # I want the color to be red if trade is a sell
-                    color=(
-                        (self.df['number_transaction'] > 0)).astype('int'),
-                    colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#1184e8']],
-                    symbol=0   
+                    color='#4fc3f7 ',
+                    # # I want the color to be red if trade is a sell
+                    # color=(
+                    #     (self.trades_df['direction'] == 1)).astype('int'),
+                    # colorscale=[[0, '#FF7F7F'], [1, 'green']],
+                    symbol=0  
                     ),
                 row=1,
                 col=1,
