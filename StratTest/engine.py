@@ -10,16 +10,17 @@ from plotly.subplots import make_subplots
 
 class TradingStrategy():
 
-    def __init__(self, data, printout=False):
+    def __init__(self, data, frequency, printout=False):
         self.df = data # dataframe with open, high, low, close, volume columns
+        self.frequency = frequency
         self.printout = printout
 
 
-    def resample_data(self, freq):
+    def resample_data(self):
 
         ''' Method to be called if the dataframe is at a lower granularity than desired dataset '''
         
-        self.df = self.df.resample(freq, label='right').agg( # closing time of candlestick
+        self.df = self.df.resample(self.frequency, label='right').agg( # closing time of candlestick
             {
             'Mid_Price': ['last', 'first', np.max, np.min], 
             # 'volume': np.sum
@@ -66,7 +67,7 @@ class TradingStrategy():
         if self.printout: print(f'Adding {indicator} with: {params}')
 
 
-    def _calculate_performance(self, execution_type):
+    def _calculate_exec_prices(self, execution_type='current_bar_close', comms_bps=0):
         ''' exec_type can assume values of:
                 - next_bar_open: assume entry and exit trades are executed at the next bar open px
                 - current_bar_close: assume entry and exit trades are executed at the current bar close px
@@ -75,47 +76,47 @@ class TradingStrategy():
         '''
 
         # get positions in the dataframe where indicator generates signals
-        open_trades_idx = np.where(self.df[f'{self.strategy}_new_position']!=0)[0]
-        # -2 because of shape is n rows and df is 0 indexed and because we do + 1 later - avoid out of bound error
-        closing_trades_idx = np.append(open_trades_idx, self.df.shape[0]-2)[1:] 
+        open_trades_idx = np.where(self.df[f'{self.strategy}_new_position']==1)[0]
+        closing_trades_idx = np.where(self.df[f'{self.strategy}_new_position']==-1)[0]
+        # out_market_idx = np.where((self.df[f'{self.strategy}_signal']==0) 
+        #     & (self.df[f'{self.strategy}_new_position']!=0))[0]
+        print(open_trades_idx)
+        print(closing_trades_idx)
 
         self.df['trade_grouper'] = np.nan
         self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index
-        self.df['trade_grouper'] = self.df['trade_grouper'].fillna(method='ffill')
-
-
-        if execution_type is None:
-            # use closing pices to calculate returns
-            self.df['px_returns_calcs'] = self.df['close']
-            self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
-
+        self.df.loc[self.df.iloc[closing_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index
         
-        else:
-            if execution_type == 'next_bar_open':
-                self.df['px_returns_calcs']  = np.where(
-                    self.df[f'{self.strategy}_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
-
-                self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
-
-            elif execution_type == 'current_bar_close':
-                self.df['px_returns_calcs'] = self.df['close'].copy()
-
-                self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+        # self.df.loc[self.df.iloc[out_market_idx].index, 'trade_grouper'] = pd.NaT
+        # self.df['trade_grouper'] = self.df['trade_grouper'].fillna(method='ffill')
 
 
+        # TODO: these assume that order is not cancelled between order being triggered and executed
+        if execution_type == 'next_bar_open':
+            self.df['px_returns_calcs']  = np.where(
+                self.df[f'{self.strategy}_new_position']!=0, self.df['open'].shift(-1), self.df['close'])
+            self.df['execution_time'] = np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index.shift(1, freq=self.frequency), pd.NaT)
 
-        self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal']
+        elif execution_type == 'current_bar_close':
+            self.df['px_returns_calcs'] = self.df['close'].copy()
+            self.df['execution_time'] = np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index, pd.NaT)
+
+
+        # apply any trading fee after stop loss calculation
+        if self.comms_bps != 0:
+            self._add_transaction_costs()
+
+
+    def _calculate_strat_metrics(self):
+
+        self.df['returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+
+        self.df[f'{self.strategy}_returns'] = self.df['returns'] * self.df[f'{self.strategy}_signal'] # accounts for long short
 
         self.df[f'{self.strategy}_trade_performance'] = self.df.groupby('trade_grouper')[[f'{self.strategy}_returns']].transform(np.sum)
 
         self.df[f'{self.strategy}_cum_performance'] = np.exp(self.df[f'{self.strategy}_returns'].cumsum())
-        # self.df[f'{self.strategy}_cash'] = self.df[f'{self.strategy}_cum_performance'] * initial_cash
 
-        # np.exp(self.df['returns'].cumsum()).plot(figsize=(8,4), legend=True) # reverse log returns to prices
-        # self.df[f'{self.strategy}_cum_performance'].plot(legend=True)
-
-
-    def _calculate_strat_metrics(self):
         self.cum_return = self.df[f'{self.strategy}_cum_performance'].dropna().values[-1]
 
     def _add_stop_losses(self, stop_loss):
@@ -182,28 +183,28 @@ class TradingStrategy():
                     if self.print_trades: print(f'Stop loss triggered - closing short ({direction}) position')
 
         # recalculate performance with stop losses
-        self._calculate_performance(self.execution_type)
+        self._calculate_exec_prices(self.execution_type)
 
 
-    def _add_transaction_costs(self, comms_bps):
+    def _add_transaction_costs(self):
         '''
-        commission: float, execution cost in basis points
+        comms_bps: float, execution cost in basis points
         '''
+        self.comms_pcgt = self.comms_bps/10000
 
         if self.stop_loss>0: 
             self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
         else:
             self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
             
-        self.df['total_comms'] = self.comms_pcgt * self.df['number_transaction']
+        self.df['total_comms_%'] = self.comms_pcgt * self.df['number_transaction']
 
-        # add column to preserve original returns for checks
-        self.df['returns_before_tr'] = self.df['returns'].copy()
-
-        self.df['returns'] = self.df['returns'] - self.df['total_comms']
-
-        # recalculate performance with stop losses
-        self._calculate_performance(None)
+        # recalculate prices where a new position occurs. Increase price when buying and decrease when selling
+        self.df['execution_price'] = np.where(
+            self.df[f'{self.strategy}_new_position']!=0, 
+            self.df['px_returns_calcs'] * (1 + (self.comms_pcgt * self.df[f'{self.strategy}_new_position'])),
+            np.nan
+        )
 
 
     def add_strategy(self, strategy, stop_loss=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
@@ -214,7 +215,7 @@ class TradingStrategy():
         self.comms_bps = comms_bps
         self.print_trades = print_trades
         # transform basis points commission in percentage
-        self.comms_pcgt = comms_bps/10000
+        
 
         if self.strategy == 'EMACrossOverLS':
 
@@ -266,14 +267,14 @@ class TradingStrategy():
 
 
         # calculate strategy performance ## TODO check if this is needed
-        self._calculate_performance(execution_type=self.execution_type)
+        self._calculate_exec_prices(execution_type=self.execution_type)
 
-        # add stop loss
-        if stop_loss>0: self._add_stop_losses(self.stop_loss)
+        # # add stop loss
+        # if stop_loss>0: self._add_stop_losses(self.stop_loss)
 
-        # add transaction costs
-        if comms_bps!=0: 
-            self._add_transaction_costs(self.comms_bps)
+        # # add transaction costs
+        # if comms_bps!=0: 
+        #     self._add_transaction_costs(self.comms_bps)
 
         self._calculate_strat_metrics()
 

@@ -28,6 +28,7 @@ class TradingBot():
         self.params = params
         self.in_position = False
         self.signal_time = pd.Timestamp(datetime.now())
+        self.params = params
         
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
@@ -36,16 +37,14 @@ class TradingBot():
     def _get_crossover(self):
 
         trading_strategy = TradingStrategy(self.bars_df)
-        trading_strategy.add_indicator(self.indicator, window=self.params['short_ema'])
-        trading_strategy.add_indicator(self.indicator, window=self.params['long_ema'])
 
         trading_strategy.add_strategy(
             self.strategy,
             execution_type=None, 
             stop_loss=0,
             comms_bps=0,
-            short_ema=f"ema_{self.params['short_ema']}", 
-            long_ema=f"ema_{self.params['long_ema']}",
+            short_ema=self.params['short_ema'], 
+            long_ema=self.params['long_ema'],
             print_trades=False
         )
 
