@@ -139,8 +139,12 @@ class TradingBot():
 
                 if sl_type == 'trailing' and self.current_price > self.previous_price and self.current_price > self.order_price:
                     # with trailing stop loss, if live order, update stop loss price if trade currently in profit
-                    self.sl_price = self.current_price * (1 - sl_pctg)
-                    self.logger.info(f"------- Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price}")
+                    # since stop loss might update at different snaps of current bar, we need additional condition
+                    # to make that stop loss price never "worsens" TODO: check if this extra condition can be added in the first if block
+                    potential_new_sl_price = self.current_price * (1 - sl_pctg)
+                    if potential_new_sl_price > self.sl_price:
+                        self.sl_price = potential_new_sl_price
+                        self.logger.info(f"------- Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price}")
 
 
                 
