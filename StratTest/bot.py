@@ -120,13 +120,13 @@ class TradingBot():
                 # set initial stop loss
                 self.sl_price = self.buy_order['price'] * (1 - sl_pctg)
 
-                self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
+                self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
                 print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                 self.in_position = True
                 self.signal_time = df.loc[previous_period]['timestamp']
 
             else:
-                self.logger.info(f"No new orders, current position: {self.in_position}")
+                self.logger.info(f"No new orders. Current position: {self.in_position}")
 
         
         elif self.in_position:
@@ -144,7 +144,7 @@ class TradingBot():
                     potential_new_sl_price = self.current_price * (1 - sl_pctg)
                     if potential_new_sl_price > self.sl_price:
                         self.sl_price = potential_new_sl_price
-                        self.logger.info(f"------- Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price}")
+                        self.logger.info(f"----- Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price} -----")
 
 
                 
@@ -161,7 +161,7 @@ class TradingBot():
                         self.buy_order['amount']
                     )
 
-                    self.logger.info(f"----- SELL ORDER PLACED at {datetime.now().isoformat()}: id: {self.sell_order['id']}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}")
+                    self.logger.info(f"----- SELL ORDER PLACED at {datetime.now().isoformat()}: id: {self.sell_order['id']}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
                     
                     print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
 
@@ -171,18 +171,18 @@ class TradingBot():
                     self.sl_price = 0
 
                 else:
-                    self.logger.info(f"Order still open, keep cruising")
+                    self.logger.info(f"Order still open, keep cruising. Current position: {self.in_position}. Stop loss level: {self.sl_price}")
             
 
             else:
                 # if order has not been executed yet, check if keeping it open or cancelling it
 
                 if df.loc[previous_period][f'{self.strategy}_new_position']>-1 and self.current_price > self.sl_price:
-                    self.logger.info(f"Order {self.buy_order['id']}: PLACED BUT NOT yet executed at {self.buy_order['price']}. Trying to execute it")
+                    self.logger.info(f"Order {self.buy_order['id']}: PLACED BUT NOT yet executed at {self.buy_order['price']}. Trying to execute it. Current position: {self.in_position}")
                 
                 else:
                     self.exchange.cancel_order(self.buy_order['id'])
-                    self.logger.info(f"----- CANCELLING order {self.buy_order['id']}: at price {self.buy_order['price']} due to adverse price movements")
+                    self.logger.info(f"----- CANCELLING order {self.buy_order['id']}: at price {self.buy_order['price']} due to adverse price movements -----")
                     
                     # reset positioning
                     self.in_position = False
@@ -215,3 +215,4 @@ class TradingBot():
         
         except Exception as e:
             self.logger.critical(f"Bot malfunctioned at {datetime.now().isoformat()}", exc_info=True)
+            self.logger.info('#####')
