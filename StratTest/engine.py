@@ -67,7 +67,7 @@ class TradingStrategy():
         if self.printout: print(f'Adding {indicator} with: {params}')
 
 
-    def _calculate_exec_prices(self, execution_type='current_bar_close', comms_bps=0):
+    def _calculate_exec_prices(self, execution_type='current_bar_close'):
         ''' exec_type can assume values of:
                 - next_bar_open: assume entry and exit trades are executed at the next bar open px
                 - current_bar_close: assume entry and exit trades are executed at the current bar close px
@@ -102,8 +102,30 @@ class TradingStrategy():
 
 
         # apply any trading fee after stop loss calculation
-        if self.comms_bps != 0:
-            self._add_transaction_costs()
+        self._add_transaction_costs()
+
+
+    def _add_transaction_costs(self):
+        '''
+        comms_bps: float, execution cost in basis points
+        create column populated with execution prices based on transaction costs
+        used later to create trades dataframe
+        '''
+        self.comms_pcgt = self.comms_bps/10000
+
+        if self.stop_loss>0: 
+            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
+        else:
+            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
+            
+        # self.df['total_comms_%'] = self.comms_pcgt * self.df['number_transaction']
+
+        # recalculate prices where a new position occurs. Increase price when buying and decrease when selling (+)
+        self.df['execution_price'] = np.where(
+            self.df[f'{self.strategy}_new_position']!=0, 
+            self.df['px_returns_calcs'] * (1 + (self.comms_pcgt * self.df[f'{self.strategy}_new_position'])),
+            np.nan
+        )
 
 
     def _get_strat_gross_returns(self):
@@ -121,6 +143,9 @@ class TradingStrategy():
 
 
     def _calculate_strat_metrics(self):
+        '''
+        Create trades dataframe and calculate strategy metrics
+        '''
 
         # get individual trades performances
         self.trades_df = self.df.groupby('trade_grouper').agg(
@@ -203,29 +228,8 @@ class TradingStrategy():
                     
                     if self.print_trades: print(f'Stop loss triggered - closing short ({direction}) position')
 
-        # recalculate performance with stop losses
-        self._calculate_exec_prices(self.execution_type)
-
-
-    def _add_transaction_costs(self):
-        '''
-        comms_bps: float, execution cost in basis points
-        '''
-        self.comms_pcgt = self.comms_bps/10000
-
-        if self.stop_loss>0: 
-            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
-        else:
-            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
-            
-        # self.df['total_comms_%'] = self.comms_pcgt * self.df['number_transaction']
-
-        # recalculate prices where a new position occurs. Increase price when buying and decrease when selling (+)
-        self.df['execution_price'] = np.where(
-            self.df[f'{self.strategy}_new_position']!=0, 
-            self.df['px_returns_calcs'] * (1 + (self.comms_pcgt * self.df[f'{self.strategy}_new_position'])),
-            np.nan
-        )
+        # # recalculate performance with stop losses
+        # self._calculate_exec_prices(self.execution_type)
 
 
     def add_strategy(self, strategy, stop_loss=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
@@ -292,10 +296,6 @@ class TradingStrategy():
 
         # # add stop loss
         # if stop_loss>0: self._add_stop_losses(self.stop_loss)
-
-        # # add transaction costs
-        # if comms_bps!=0: 
-        #     self._add_transaction_costs(self.comms_bps)
 
         self._get_strat_gross_returns() # get strategy returns time series
         self._calculate_strat_metrics() # calculate strategy perfomance looking at individual trades
@@ -434,6 +434,16 @@ class TradingStrategy():
                 col=1
             )
 
+            
+            fig.add_scatter(
+                x=self.trades_df.index,
+                y=self.trades_df['cum_trades_pctg_return']+1,
+                name='net_performance',
+                row=3,
+                col=1
+            )
+
+
             # add trades perfomance
             fig.add_scatter(
                 x=self.trades_df.index,#['liquidated_at'],
@@ -468,13 +478,22 @@ class TradingStrategy():
             )
 
 
+
+        # update subplots layouts
+        fig.update_layout(
+            yaxis1=dict(title="Trade Net Return"),
+            yaxis2=dict(title="Position"),
+            yaxis3=dict(title="Price Chart"),
+            yaxis4=dict(title="Strategy Return"),
+        )
+
         # general layout
         fig.update_layout(
             width=1200,
             height=700,
             title=f'<b>{self.strategy} Strategy</b>',
             title_x=.5,
-            yaxis_title='USDT/BTC',
+            # yaxis_title='USDT/BTC',
             template="plotly_dark",
             # plot_bgcolor='rgb(10,10,10)'
         )
