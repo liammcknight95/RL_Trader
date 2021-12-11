@@ -148,7 +148,7 @@ class TradingStrategy():
 
         self.df[f'{self.strategy}_gross_log_returns'] = self.df['gross_log_returns'] * self.df[f'{self.strategy}_signal'] # accounts for long short
 
-        self.df[f'{self.strategy}_gross_cum_log_returns'] = self.df[f'{self.strategy}_gross_log_returns'].cumsum()# np.exp(self.df[f'{self.strategy}_gross_log_returns'].cumsum()) -1  # cumulative gross performance when in
+        self.df[f'{self.strategy}_gross_cum_pctg_returns'] = np.exp(self.df[f'{self.strategy}_gross_log_returns'].cumsum()) -1  # cumulative gross performance when in
 
 
     def _calculate_strat_metrics(self):
@@ -437,7 +437,7 @@ class TradingStrategy():
             # add strategy returns
             fig.add_scatter(
                 x=self.df.index,
-                y=self.df[f'{self.strategy}_gross_cum_log_returns'],
+                y=self.df[f'{self.strategy}_gross_cum_pctg_returns'],
                 name='gross_performance',
                 row=3,
                 col=1
@@ -445,8 +445,8 @@ class TradingStrategy():
 
             
             fig.add_scatter(
-                x=self.trades_df.index,
-                y=self.trades_df['cum_trades_log_return'],
+                x=self.trades_df['liquidated_at'],
+                y=self.trades_df['cum_trades_pctg_return'],
                 name='net_performance',
                 row=3,
                 col=1
