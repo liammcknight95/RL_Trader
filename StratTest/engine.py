@@ -67,7 +67,7 @@ class TradingStrategy():
         if self.printout: print(f'Adding {indicator} with: {params}')
 
 
-    def _calculate_exec_prices(self, execution_type='current_bar_close'):
+    def _calculate_exec_prices(self, execution_type):
         ''' exec_type can assume values of:
                 - next_bar_open: assume entry and exit trades are executed at the next bar open px
                 - current_bar_close: assume entry and exit trades are executed at the current bar close px
@@ -81,8 +81,8 @@ class TradingStrategy():
         between_open_close_idx = np.where(self.df[f'{self.strategy}_signal']!=0)
         # out_market_idx = np.where((self.df[f'{self.strategy}_signal']==0) 
         #     & (self.df[f'{self.strategy}_new_position']!=0))[0]
-        print(open_trades_idx)
-        print(closing_trades_idx)
+        # print(open_trades_idx)
+        # print(closing_trades_idx)
 
         self.df['trade_grouper'] = np.nan
         self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index # add grouper at opening
@@ -100,6 +100,14 @@ class TradingStrategy():
             self.df['px_returns_calcs'] = self.df['close'].copy()
             self.df['execution_time'] = pd.to_datetime(np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index, pd.NaT))
 
+        elif execution_type == 'cheat_previous_close':
+            self.df['px_returns_calcs'] = np.where(
+                self.df[f'{self.strategy}_new_position']==1, self.df['close'], 
+                np.where( 
+                    self.df[f'{self.strategy}_new_position']==-1, self.df['close'].shift(1), self.df['close']
+                )
+            )
+            self.df['execution_time'] = pd.to_datetime(np.where(self.df[f'{self.strategy}_new_position']!=0, self.df.index.shift(-1), pd.NaT))
 
         # apply any trading fee after stop loss calculation
         self._add_transaction_costs()
@@ -112,6 +120,7 @@ class TradingStrategy():
         used later to create trades dataframe
         '''
         self.comms_pcgt = self.comms_bps/10000
+        print(self.comms_bps, self.comms_pcgt)
 
         if self.stop_loss>0: 
             self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
@@ -135,11 +144,11 @@ class TradingStrategy():
         '''
 
         # get gross log cumulative returns over time
-        self.df['gross_log_returns'] = np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))
+        self.df['gross_log_returns'] = (np.log(self.df['px_returns_calcs']) - np.log(self.df['px_returns_calcs'].shift(1))).shift(-1)
 
         self.df[f'{self.strategy}_gross_log_returns'] = self.df['gross_log_returns'] * self.df[f'{self.strategy}_signal'] # accounts for long short
 
-        self.df[f'{self.strategy}_gross_cum_log_returns'] = np.exp(self.df[f'{self.strategy}_gross_log_returns'].cumsum()) # cumulative gross performance when in
+        self.df[f'{self.strategy}_gross_cum_log_returns'] = self.df[f'{self.strategy}_gross_log_returns'].cumsum()# np.exp(self.df[f'{self.strategy}_gross_log_returns'].cumsum()) -1  # cumulative gross performance when in
 
 
     def _calculate_strat_metrics(self):
@@ -437,7 +446,7 @@ class TradingStrategy():
             
             fig.add_scatter(
                 x=self.trades_df.index,
-                y=self.trades_df['cum_trades_pctg_return']+1,
+                y=self.trades_df['cum_trades_log_return'],
                 name='net_performance',
                 row=3,
                 col=1
