@@ -14,6 +14,7 @@ class TradingStrategy():
         self.df = data # dataframe with open, high, low, close, volume columns
         self.frequency = frequency
         self.printout = printout
+        self.strategy = ''
 
 
     def resample_data(self):
@@ -43,10 +44,12 @@ class TradingStrategy():
 
         if indicator == 'BollingerBands':
 
-            bb_indicator = BollingerBands(self.df['close'], window=params['window'])
+            bb_indicator = BollingerBands(self.df['close'], window=params['window'], window_dev=params['window_dev'])
 
+            # bands created adding and subtracting std from moving average
             self.df[f'bollinger_hband_{params["window"]}'] = bb_indicator.bollinger_hband()
             self.df[f'bollinger_lband_{params["window"]}'] = bb_indicator.bollinger_lband()
+
             self.df[f'bollinger_mavg_{params["window"]}'] = bb_indicator.bollinger_mavg()
 
 
@@ -81,8 +84,8 @@ class TradingStrategy():
         between_open_close_idx = np.where(self.df[f'{self.strategy}_signal']!=0)
         # out_market_idx = np.where((self.df[f'{self.strategy}_signal']==0) 
         #     & (self.df[f'{self.strategy}_new_position']!=0))[0]
-        # print(open_trades_idx)
-        # print(closing_trades_idx)
+        # print(open_trades_idx.shape)
+        # print(closing_trades_idx.shape)
 
         self.df['trade_grouper'] = np.nan
         self.df.loc[self.df.iloc[open_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx].index # add grouper at opening
@@ -120,7 +123,7 @@ class TradingStrategy():
         used later to create trades dataframe
         '''
         self.comms_pcgt = self.comms_bps/10000
-        print(self.comms_bps, self.comms_pcgt)
+        # print(self.comms_bps, self.comms_pcgt)
 
         if self.stop_loss>0: 
             self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
@@ -161,7 +164,7 @@ class TradingStrategy():
             entry_price=('execution_price', 'first'), 
             exit_price=('execution_price', 'last'), 
             trade_len=('trade_grouper', 'count'),
-            direction=('EMACrossOverLO_new_position', 'first'),
+            direction=(f'{self.strategy}_new_position', 'first'),
             liquidated_at=('execution_time', 'last')
         )
 
@@ -171,7 +174,10 @@ class TradingStrategy():
         self.trades_df['trades_pctg_return'] = np.exp(self.trades_df['trades_log_return']) - 1
         self.trades_df['cum_trades_pctg_return'] = np.exp(self.trades_df['cum_trades_log_return']) - 1
 
-        self.cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
+        try:
+            self.cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
+        except:
+            self.cum_return = f"{np.nan}"
 
 
     def _add_stop_losses(self, stop_loss):
@@ -278,9 +284,11 @@ class TradingStrategy():
 
         elif self.strategy == 'EMACrossOverLO':
 
+            # indicator column names
             self.short_ema = f"ema_{indicators['short_ema']}"
             self.long_ema = f"ema_{indicators['long_ema']}"
 
+            # add indicators
             self.add_indicator('EMAIndicator', window=indicators['short_ema'])
             self.add_indicator('EMAIndicator', window=indicators['long_ema'])
 
@@ -288,6 +296,33 @@ class TradingStrategy():
             # signal: tiemseries of +1 when long, -1 when short, 0 when neutral
             self.df[f'{self.strategy}_signal'] = np.where(
                 self.df[self.short_ema] > self.df[self.long_ema], 1, 0)
+
+            # trades: flag when a new trade is generated - descriptive
+            self.df[f'{self.strategy}_trades'] = np.where(
+                self.df[f'{self.strategy}_signal'].diff() > 0, 'buy', 
+                np.where(self.df[f'{self.strategy}_signal'].diff() < 0, 'sell', 'hold'))
+
+            # trades: flag when a new trade is generated - numeric
+            self.df[f'{self.strategy}_new_position'] = np.where(
+                self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
+                np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
+
+
+        elif self.strategy == 'BollingerBandsLO':
+
+            # indicator column names
+            self.hband = f"bollinger_hband_{indicators['window']}"
+            self.lband = f"bollinger_lband_{indicators['window']}"
+            self.mavg = f"bollinger_mavg_{indicators['window']}"
+
+            # add indicators
+            self.add_indicator('BollingerBands', window=indicators['window'], window_dev=indicators['window_dev'])
+
+            ## Generate Signals
+            self.df[f'{self.strategy}_signal'] = np.where(self.df['close'] > self.df[self.hband], 1,
+                np.where(self.df['close'] < self.df[self.mavg], 0, np.nan))
+
+            self.df[f'{self.strategy}_signal'] = self.df[f'{self.strategy}_signal'].fillna(method='ffill').fillna(0) # fillna 0 handles initial NAs
 
             # trades: flag when a new trade is generated - descriptive
             self.df[f'{self.strategy}_trades'] = np.where(
@@ -313,7 +348,7 @@ class TradingStrategy():
     def trading_chart(self, plot_strategy=False, **indicators):
 
         indicator_names = indicators.values()
-        plot_indic_color = ['#CCFFFF', '#FFCCFF']
+        plot_indic_color = ['#CCFFFF', '#FFCCFF', '#536868']
 
         fig = make_subplots(
             rows=3, 
