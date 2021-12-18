@@ -1,3 +1,4 @@
+from datetime import datetime
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.trend import EMAIndicator
 
@@ -70,15 +71,11 @@ class TradingStrategy():
         if self.printout: print(f'Adding {indicator} with: {params}')
 
 
-    def _calculate_exec_prices(self, execution_type):
-        ''' exec_type can assume values of:
-                - next_bar_open: assume entry and exit trades are executed at the next bar open px
-                - current_bar_close: assume entry and exit trades are executed at the current bar close px
-                - next_bar_worst: TODO, assume trade is executed at the worst px available next bar, high 
-                    or low depending on the trade directions         
-        '''
+    def _calculate_trade_groupers(self):
+        ''' function that create a trade grouper column using a timestamp, to identify each
+        new individual trade '''
 
-        # get positions in the dataframe where indicator generates signals
+    # get positions in the dataframe where indicator generates signals
         open_trades_idx = np.where(self.df[f'{self.strategy}_new_position']==1)[0]
         closing_trades_idx = np.where(self.df[f'{self.strategy}_new_position']==-1)[0]
         between_open_close_idx = np.where(self.df[f'{self.strategy}_signal']!=0)
@@ -92,6 +89,14 @@ class TradingStrategy():
         self.df.loc[self.df.iloc[closing_trades_idx].index, 'trade_grouper'] = self.df.iloc[open_trades_idx[:closing_trades_idx.shape[0]]].index # add grouper at closing
         self.df.loc[self.df.iloc[between_open_close_idx].index, 'trade_grouper'] = self.df.iloc[between_open_close_idx]['trade_grouper'].fillna(method='ffill') # add grouper between
 
+
+    def _calculate_exec_prices(self, execution_type):
+        ''' exec_type can assume values of:
+                - next_bar_open: assume entry and exit trades are executed at the next bar open px
+                - current_bar_close: assume entry and exit trades are executed at the current bar close px
+                - next_bar_worst: TODO, assume trade is executed at the worst px available next bar, high 
+                    or low depending on the trade directions         
+        '''
 
         # TODO: these assume that order is not cancelled between order being triggered and executed
         if execution_type == 'next_bar_open':
@@ -125,10 +130,10 @@ class TradingStrategy():
         self.comms_pcgt = self.comms_bps/10000
         # print(self.comms_bps, self.comms_pcgt)
 
-        if self.stop_loss>0: 
-            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
-        else:
-            self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
+        # if self.stop_loss>0: 
+        #     self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs() + self.df['sl_hit'].abs()
+        # else:
+        #     self.df['number_transaction'] = self.df[f'{self.strategy}_new_position'].abs()
             
         # self.df['total_comms_%'] = self.comms_pcgt * self.df['number_transaction']
 
@@ -157,6 +162,7 @@ class TradingStrategy():
     def _calculate_strat_metrics(self):
         '''
         Create trades dataframe and calculate strategy metrics
+        Calculated using execution_price, which is the the price net of transaction cost
         '''
 
         # get individual trades performances
@@ -178,6 +184,39 @@ class TradingStrategy():
             self.cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
         except:
             self.cum_return = f"{np.nan}"
+
+
+    def add_stop_loss2(self):
+        # works well for long only
+        self.df['temp_trade_grouper_filled_nans'] = self.df['trade_grouper'].fillna(datetime(2030,1,1))
+        self.df['sl_price'] = self.df.groupby('temp_trade_grouper_filled_nans')['high'].transform(pd.Series.cummax)  * (1-(self.stop_loss_bps/10000)) * self.df[f'{self.strategy}_signal']
+        # self.df['sl_level'] = self.df['close'].shift(1) * (1-(self.stop_loss_bps/10000)) * self.df[f'{self.strategy}_signal']
+        
+        self.df['sl_hit'] = (self.df['low'] < self.df['sl_price']) * self.df[f'{self.strategy}_signal']
+
+
+        for name, sub_df in self.df.groupby(by='trade_grouper'):
+
+            # entry_price = self.df[self.df.index==name]['px_returns_calcs'].values[0]
+            direction = self.df[self.df.index==name][f'{self.strategy}_new_position'].values[0]
+
+            # check for stop losses before any backtesting
+            if direction > 0: # if long
+                
+                if sub_df['sl_hit'].sum()==0:
+                    # if stop loss not hit do nothing
+                    pass
+
+                else:
+                    sl_trigger_time = sub_df[sub_df['sl_hit'] > 0].index[0] # when stop loss was triggered
+                    sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index # all the datapoints subsequently affected by stop loss
+
+                    # self.df.loc[sl_trigger_time, 'sl_hit'] = -1 # flag stop loss being hit
+                    self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "stop_sell" # sl trade type
+                    self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = -1
+                    self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
+
+                    # TODO change end of df signal to zero, and potentially "trades" column too
 
 
     def _add_stop_losses(self, stop_loss):
@@ -247,11 +286,11 @@ class TradingStrategy():
         # self._calculate_exec_prices(self.execution_type)
 
 
-    def add_strategy(self, strategy, stop_loss=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
+    def add_strategy(self, strategy, stop_loss_bps=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
 
         self.strategy = strategy
         self.execution_type = execution_type ### self.execution_type
-        self.stop_loss = stop_loss
+        self.stop_loss_bps = stop_loss_bps
         self.comms_bps = comms_bps
         self.print_trades = print_trades
         # transform basis points commission in percentage
@@ -335,17 +374,20 @@ class TradingStrategy():
                 np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
 
 
+        # get groupers
+        self._calculate_trade_groupers()
+
+        # add stop loss
+        if self.stop_loss_bps>0: self.add_stop_loss2()
+
         # calculate strategy performance ## TODO check if this is needed
         self._calculate_exec_prices(execution_type=self.execution_type)
-
-        # # add stop loss
-        # if stop_loss>0: self._add_stop_losses(self.stop_loss)
 
         self._get_strat_gross_returns() # get strategy returns time series
         self._calculate_strat_metrics() # calculate strategy perfomance looking at individual trades
 
 
-    def trading_chart(self, plot_strategy=False, **indicators):
+    def trading_chart(self, plot_strategy=False, plot_volatility=False, **indicators):
 
         indicator_names = indicators.values()
         plot_indic_color = ['#CCFFFF', '#FFCCFF', '#536868']
@@ -358,7 +400,7 @@ class TradingStrategy():
             vertical_spacing=0.02,
             specs=[
                 [{"secondary_y": True}],
-                [{"secondary_y": False}],
+                [{"secondary_y": True}],
                 [{"secondary_y": False}],
             ]
         )
@@ -393,6 +435,17 @@ class TradingStrategy():
                     row=2, 
                     col=1
                 )
+
+        if plot_volatility:
+            fig.add_scatter(
+                    x=self.df.index, 
+                    y=self.df['bar_volatility'], 
+                    name=indic, 
+                    marker=dict(color='#6339D9'),
+                    row=2, 
+                    col=1,
+                    secondary_y=True
+            )
 
         if plot_strategy:
             # add buy trades marks
@@ -431,41 +484,41 @@ class TradingStrategy():
                     col=1
             )
 
-            # add stop loss
-            if self.stop_loss >0:
-                fig.add_scatter(
-                    x=self.df.index, 
-                    y=self.df['close']+500, 
-                    showlegend=False, 
-                    mode='markers',
-                    marker=dict(
-                        size=12,
-                        # I want the color to be red if trade is a sell
-                        color=(
-                            (self.df['sl_hit'] == 1)).astype('int'),
-                        colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
-                        symbol=105   
-                        ),
-                        row=2, 
-                        col=1
-                )
+            # # add stop loss
+            # if self.stop_loss >0:
+            #     fig.add_scatter(
+            #         x=self.df.index, 
+            #         y=self.df['close']+500, 
+            #         showlegend=False, 
+            #         mode='markers',
+            #         marker=dict(
+            #             size=12,
+            #             # I want the color to be red if trade is a sell
+            #             color=(
+            #                 (self.df['sl_hit'] == 1)).astype('int'),
+            #             colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
+            #             symbol=105   
+            #             ),
+            #             row=2, 
+            #             col=1
+            #     )
 
-                fig.add_scatter(
-                    x=self.df.index, 
-                    y=self.df['close']-500, 
-                    showlegend=False, 
-                    mode='markers',
-                    marker=dict(
-                        size=12,
-                        # I want the color to be red if trade is a sell
-                        color=(
-                            (self.df['sl_hit'] == -1)).astype('int'),
-                        colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
-                        symbol=106   
-                        ),
-                        row=2, 
-                        col=1
-                )
+            #     fig.add_scatter(
+            #         x=self.df.index, 
+            #         y=self.df['close']-500, 
+            #         showlegend=False, 
+            #         mode='markers',
+            #         marker=dict(
+            #             size=12,
+            #             # I want the color to be red if trade is a sell
+            #             color=(
+            #                 (self.df['sl_hit'] == -1)).astype('int'),
+            #             colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
+            #             symbol=106   
+            #             ),
+            #             row=2, 
+            #             col=1
+            #     )
 
 
 
