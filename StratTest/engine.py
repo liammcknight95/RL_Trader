@@ -171,7 +171,8 @@ class TradingStrategy():
             exit_price=('execution_price', 'last'), 
             trade_len=('trade_grouper', 'count'),
             direction=(f'{self.strategy}_new_position', 'first'),
-            liquidated_at=('execution_time', 'last')
+            liquidated_at=('execution_time', 'last'),
+            sl_hit=('sl_hit', 'sum')
         )
 
         self.trades_df['trades_log_return'] = np.log(self.trades_df['exit_price']) - np.log(self.trades_df['entry_price'])
@@ -215,6 +216,9 @@ class TradingStrategy():
                     self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "stop_sell" # sl trade type
                     self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = -1
                     self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
+                    self.df.loc[sl_affected_range[-1], f'{self.strategy}_new_position'] = 0 # set original closing position to 0
+                    self.df.loc[sl_affected_range[1:], 'trade_grouper'] = np.nan # set trade grouper to nan, with the exception of the actual trigger timestamp
+                    self.df.loc[sl_affected_range[1:], 'sl_hit'] = 0 # reset subsequent stop losses
 
                     # TODO change end of df signal to zero, and potentially "trades" column too
 
@@ -436,16 +440,16 @@ class TradingStrategy():
                     col=1
                 )
 
-        if plot_volatility:
-            fig.add_scatter(
-                    x=self.df.index, 
-                    y=self.df['bar_volatility'], 
-                    name=indic, 
-                    marker=dict(color='#6339D9'),
-                    row=2, 
-                    col=1,
-                    secondary_y=True
-            )
+        # if plot_volatility:
+        #     fig.add_scatter(
+        #             x=self.df.index, 
+        #             y=self.df['bar_volatility'], 
+        #             name=indic, 
+        #             marker=dict(color='#6339D9'),
+        #             row=2, 
+        #             col=1,
+        #             secondary_y=True
+        #     )
 
         if plot_strategy:
             # add buy trades marks
@@ -484,41 +488,41 @@ class TradingStrategy():
                     col=1
             )
 
-            # # add stop loss
-            # if self.stop_loss >0:
-            #     fig.add_scatter(
-            #         x=self.df.index, 
-            #         y=self.df['close']+500, 
-            #         showlegend=False, 
-            #         mode='markers',
-            #         marker=dict(
-            #             size=12,
-            #             # I want the color to be red if trade is a sell
-            #             color=(
-            #                 (self.df['sl_hit'] == 1)).astype('int'),
-            #             colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
-            #             symbol=105   
-            #             ),
-            #             row=2, 
-            #             col=1
-            #     )
+            # add stop loss
+            if self.stop_loss_bps >0:
+                # fig.add_scatter(
+                #     x=self.df.index, 
+                #     y=self.df['close']+500, 
+                #     showlegend=False, 
+                #     mode='markers',
+                #     marker=dict(
+                #         size=12,
+                #         # I want the color to be red if trade is a sell
+                #         color=(
+                #             (self.df['sl_hit'] == 1)).astype('int'),
+                #         colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
+                #         symbol=105   
+                #         ),
+                #         row=2, 
+                #         col=1
+                # )
 
-            #     fig.add_scatter(
-            #         x=self.df.index, 
-            #         y=self.df['close']-500, 
-            #         showlegend=False, 
-            #         mode='markers',
-            #         marker=dict(
-            #             size=12,
-            #             # I want the color to be red if trade is a sell
-            #             color=(
-            #                 (self.df['sl_hit'] == -1)).astype('int'),
-            #             colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
-            #             symbol=106   
-            #             ),
-            #             row=2, 
-            #             col=1
-            #     )
+                fig.add_scatter(
+                    x=self.df.index, 
+                    y=self.df['close']-500, 
+                    showlegend=False, 
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        # I want the color to be red if trade is a sell
+                        color=(
+                            (self.df['sl_hit'] == 1)).astype('int'),
+                        colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
+                        symbol=106   
+                        ),
+                        row=2, 
+                        col=1
+                )
 
 
 
