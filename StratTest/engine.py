@@ -187,7 +187,7 @@ class TradingStrategy():
             self.cum_return = f"{np.nan}"
 
 
-    def add_stop_loss2(self):
+    def add_stop_loss(self):
         # works well for long only
         self.df['temp_trade_grouper_filled_nans'] = self.df['trade_grouper'].fillna(datetime(2030,1,1))
         self.df['sl_price'] = self.df.groupby('temp_trade_grouper_filled_nans')['high'].transform(pd.Series.cummax)  * (1-(self.stop_loss_bps/10000)) * self.df[f'{self.strategy}_signal']
@@ -219,75 +219,6 @@ class TradingStrategy():
                     self.df.loc[sl_affected_range[-1], f'{self.strategy}_new_position'] = 0 # set original closing position to 0
                     self.df.loc[sl_affected_range[1:], 'trade_grouper'] = np.nan # set trade grouper to nan, with the exception of the actual trigger timestamp
                     self.df.loc[sl_affected_range[1:], 'sl_hit'] = 0 # reset subsequent stop losses
-
-                    # TODO change end of df signal to zero, and potentially "trades" column too
-
-
-    def _add_stop_losses(self, stop_loss):
-
-        # scenario where no stop loss is present, invested position is the same as the signal output
-        # keep this column for sanity check later
-        # self.df['_new_position'] = self.df[f'{self.strategy}_new_position'].copy()
-        # self.df['_trades'] = self.df[f'{self.strategy}_trades'].copy()
-        # self.df['_signal'] = self.df[f'{self.strategy}_signal'].copy()
-
-
-        # col to keep track of stop loss trigger
-        self.df['sl_trigger'] = np.nan
-        self.df['sl_hit'] = 0
-        self.df['sl_trade'] = np.nan
-
-        # all_trades_list = []
-        for name, sub_df in self.df.groupby(by='trade_grouper'):
-
-            entry_price = self.df[self.df.index==name]['px_returns_calcs'].values[0]
-            direction = self.df[self.df.index==name][f'{self.strategy}_new_position'].values[0]
-
-            # check for stop losses before any backtesting
-            if direction > 0:
-
-                sl_price = entry_price * (1 - stop_loss)
-                sub_df['sl_trigger'] = sl_price
-                self.df.loc[sub_df.index, 'sl_trigger'] = sl_price
-
-                if (sub_df['sl_trigger'] < sub_df['low']).sum() == sub_df.shape[0]:
-                    if self.print_trades: print(f'Long ({direction}) position held until signal reversed')
-                    
-                else:
-                    sl_trigger_time = sub_df[~(sub_df['sl_trigger'] < sub_df['low'])].index[0] # when stop loss was triggered
-                    sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index # all the datapoints subsequently affected by stop loss
-
-                    #self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = 0 # create exit point when sl is hit
-                    #self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "hold" # create exit point when sl is hit
-                    self.df.loc[sl_trigger_time, 'sl_hit'] = -1 # flag stop loss being hit
-                    self.df.loc[sl_trigger_time, 'sl_trade'] = "stop_sell" # sl trade type
-                    self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
-                    
-                    if self.print_trades: print(f'Stop loss triggered - closing long ({direction}) position')
-
-            elif direction < 0:
-
-                sl_price = entry_price * (1 + stop_loss)
-                sub_df['sl_trigger'] =  sl_price
-                self.df.loc[sub_df.index, 'sl_trigger'] = sl_price
-
-                if (sub_df['sl_trigger'] > sub_df['high']).sum() == sub_df.shape[0]:
-                    if self.print_trades: print(f'Short ({direction}) position held until signal reversed')
-
-                else:
-                    sl_trigger_time = sub_df[~(sub_df['sl_trigger'] > sub_df['high'])].index[0] # when stop loss was triggered
-                    sl_affected_range = sub_df[sub_df.index>=sl_trigger_time].index  # all the datapoints subsequently affected by stop loss
-
-                    #self.df.loc[sl_trigger_time, f'{self.strategy}_new_position'] = 0 # create exit point when sl is hit
-                    #self.df.loc[sl_trigger_time, f'{self.strategy}_trades'] = "hold" # create exit point when sl is hit
-                    self.df.loc[sl_trigger_time, 'sl_hit'] = +1 # flag stop loss being hit
-                    self.df.loc[sl_trigger_time, 'sl_trade'] = "stop_buy" # sl trade type
-                    self.df.loc[sl_affected_range, f'{self.strategy}_signal'] = 0 # turn signal to 0 - out of market
-                    
-                    if self.print_trades: print(f'Stop loss triggered - closing short ({direction}) position')
-
-        # # recalculate performance with stop losses
-        # self._calculate_exec_prices(self.execution_type)
 
 
     def add_strategy(self, strategy, stop_loss_bps=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
@@ -382,7 +313,8 @@ class TradingStrategy():
         self._calculate_trade_groupers()
 
         # add stop loss
-        if self.stop_loss_bps>0: self.add_stop_loss2()
+        if self.stop_loss_bps>0: self.add_stop_loss()
+        else: self.df['sl_hit'] = np.nan
 
         # calculate strategy performance ## TODO check if this is needed
         self._calculate_exec_prices(execution_type=self.execution_type)
