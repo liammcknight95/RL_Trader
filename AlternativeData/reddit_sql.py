@@ -1,36 +1,92 @@
 import sqlite3
 from datetime import datetime
 
-def create_subreddit_table(db=':memory:'):
+
+def get_all_db_tables(db=':memory:'):
+
+    conn = sqlite3.connect(db) # can pass a file 'filename.db' or make an in memory db - ':memory:' # './local_data/text_data.db'
+    c = conn.cursor() # create a cursor
+    c. execute("SELECT name FROM sqlite_master WHERE type='table';")
+    print(c.fetchall())
+    conn.close()
+
+
+def create_psaw_table(db=':memory:'):
 
     conn = sqlite3.connect(db) # can pass a file 'filename.db' or make an in memory db - ':memory:' # './local_data/text_data.db'
     c = conn.cursor() # create a cursor
 
 
     c.execute('''
-        CREATE TABLE IF NOT EXISTS reddit_test (
-            id text,
-            author text,
-            created_utc text,
-            subreddit text,
-            title text,
-            selftext text,
-            full_link text,
-            PRIMARY KEY (id)
+        CREATE TABLE IF NOT EXISTS reddit_psaw_submissions (
+            psaw_id text NOT NULL,
+            psaw_author text,
+            psaw_created_utc text,
+            psaw_subreddit text,
+            psaw_title text,
+            psaw_selftext text,
+            psaw_full_link text,
+            PRIMARY KEY (psaw_id)
         )
     ''')
     conn.commit()
 
-    # # TODO use execute many instead for bulk upload
-    # [insert_new_reddit(entry) for entry in final_df.to_dict('records')]
+    conn.close()
 
-    # reddits = get_reddits(0)
-    # columns = [d[0] for d in c.description]
+
+def create_praw_tables(db=':memory:'):
+
+    conn = sqlite3.connect(db) # can pass a file 'filename.db' or make an in memory db - ':memory:' # './local_data/text_data.db'
+    c = conn.cursor() # create a cursor
+
+    # create main praw table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS reddit_praw_submissions (
+            praw_id text NOT NULL,
+
+            -- redundant from psaw, keept for now for testing
+            praw_created_utc text,
+            praw_subreddit text,
+            praw_title text,
+            praw_selftext text,
+            praw_full_link text,
+
+            -- some post quality metrics
+            praw_num_comments integer,
+            praw_score integer,
+            praw_upvote_ratio real,
+            PRIMARY KEY (praw_id)
+        )
+    ''')
+
+    # create praw comments table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS reddit_praw_comments(
+
+            -- comment unique identifier
+            praw_comment_id text NOT NULL,
+
+            -- parent comment id
+            praw_comment_parent_id text NOT NULL,
+
+            -- main submission id
+            praw_comment_link_id text,
+            
+            -- comment related data
+            praw_created_utc text,            
+            praw_comment_body text,
+            praw_comment_score integer,
+
+            PRIMARY KEY (praw_comment_id)
+        )
+    ''')
+
+    conn.commit()
 
     conn.close()
 
 
-def insert_new_reddit(submission, db=':memory:'):
+def insert_new_psaw_submission(submission, db=':memory:'):
     
     conn = sqlite3.connect(db)
     c = conn.cursor()
@@ -47,7 +103,7 @@ def insert_new_reddit(submission, db=':memory:'):
         }
 
         c.execute(f'''
-            INSERT INTO reddit_test VALUES (
+            INSERT INTO reddit_psaw_submissions VALUES (
                 :id,
                 :author,
                 :created_utc,
@@ -61,10 +117,80 @@ def insert_new_reddit(submission, db=':memory:'):
     conn.close()
 
 
-def get_reddits(db=':memory:'):
+def insert_new_praw_submission(submission, db=':memory:'):
+    
     conn = sqlite3.connect(db)
     c = conn.cursor()
-    c.execute("SELECT * FROM reddit_test")#, {'ups':ups_threshold})
+    # using conn as a context manager to avoid explicitly committing every time
+    with conn:
+
+        
+        praw_submission_values = {
+            'praw_id':submission.id,
+            # 'author':submission.author,
+            'praw_created_utc':datetime.fromtimestamp(int(submission.created_utc)).strftime('%Y-%m-%d %H:%M:%S'),
+            'praw_subreddit':submission.subreddit.display_name,
+            'praw_title':submission.title,
+            'praw_selftext':submission.selftext,
+            'praw_full_link':submission.url,
+
+            'praw_num_comments':submission.num_comments,
+            'praw_score':submission.score,
+            'praw_upvote_ratio':submission.upvote_ratio
+        }
+
+        c.execute(f'''
+            INSERT INTO reddit_praw_submissions VALUES (
+                :praw_id,
+                :praw_created_utc,
+                :praw_subreddit,
+                :praw_title,
+                :praw_selftext,
+                :praw_full_link,
+                :praw_num_comments,
+                :praw_score,
+                :praw_upvote_ratio
+            )
+        ''', praw_submission_values)
+
+    conn.close()
+
+
+def insert_new_praw_comment(comment, db=':memory:'):
+    
+    conn = sqlite3.connect(db)
+    c = conn.cursor()
+    # using conn as a context manager to avoid explicitly committing every time
+    with conn:
+
+        praw_comments_values = {
+            'praw_comment_id':comment.id,
+            'praw_comment_parent_id':comment.parent_id,
+            'praw_comment_link_id':comment.link_id,
+            'praw_comment_created_utc':datetime.fromtimestamp(int(comment.created_utc)).strftime('%Y-%m-%d %H:%M:%S'),
+            'praw_comment_body':comment.body,
+            'praw_comment_score':comment.score
+        }
+
+
+        c.execute(f'''
+            INSERT INTO reddit_praw_comments VALUES (
+                :praw_comment_id,
+                :praw_comment_parent_id,
+                :praw_comment_link_id,
+                :praw_comment_created_utc,
+                :praw_comment_body,
+                :praw_comment_score
+            )
+        ''', praw_comments_values)
+
+    conn.close()
+
+
+def get_reddits(table, db=':memory:'):
+    conn = sqlite3.connect(db)
+    c = conn.cursor()
+    c.execute(f"SELECT * FROM {table}")#, {'ups':ups_threshold})
     results =  c.fetchall()
     conn.close()
 
