@@ -340,6 +340,39 @@ def standardize(ts, stdz_depth, norm_type='z_score', roll=0):
     else:
         print('Normalization not perfmed, please check your code')
 
+
+def get_lob_download_only(pair, date_start, date_end):
+    ''' lightweight version of get_lob_data only for data download'''
+
+    configuration = config()
+    raw_data_folder = configuration['folders']['raw_lob_data']
+
+    date_start = datetime.strptime(date_start, '%Y-%m-%d')
+    date_end = datetime.strptime(date_end, '%Y-%m-%d')
+
+    # Loop through day folders
+    date_to_process = date_start
+    while date_to_process <= date_end:
+        day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
+
+        if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
+            s3_resource = get_s3_resource()
+            lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
+            os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+
+            keys = []
+            for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
+                keys.append(obj.key)
+
+            download_s3_folder(lob_data_bucket, day_folder, keys)
+            shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
+        else:
+            print(f'{raw_data_folder}/{pair}/{day_folder} already downloaded')
+
+        date_to_process += timedelta(days=1)
+
+
+
 def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), lob_depth=10):
     '''
     Function to get limit orde book snapshots time series
