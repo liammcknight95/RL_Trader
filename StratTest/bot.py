@@ -12,7 +12,7 @@ import config
 
 class TradingBot():
 
-    def __init__(self, strategy, indicator, sandbox=True, **params):
+    def __init__(self, strategy, frequency, sandbox=True, **params):
 
         ## Exchange connectivity
         self.exchange = ccxt.bitstamp(
@@ -24,7 +24,8 @@ class TradingBot():
         self.exchange.set_sandbox_mode(sandbox)
 
         self.strategy = strategy
-        self.indicator = indicator
+        # self.indicator = indicator
+        self.frequency = frequency
         self.params = params
         self.in_position = False
         self.signal_time = pd.Timestamp(datetime.now())
@@ -34,19 +35,26 @@ class TradingBot():
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
 
 
-    def _get_crossover(self):
+    def _get_crossover(self, plot=False):
 
-        trading_strategy = TradingStrategy(self.bars_df)
-
+        trading_strategy = TradingStrategy(self.bars_df, self.frequency)
+        print(self.params)
         trading_strategy.add_strategy(
             self.strategy,
-            execution_type=None, 
-            stop_loss=0,
+            execution_type='next_bar_open',#None, 
+            stop_loss_bps=0,
             comms_bps=0,
-            short_ema=self.params['short_ema'], 
-            long_ema=self.params['long_ema'],
-            print_trades=False
+            print_trades=False,
+            indicators_params=self.params
+
         )
+
+        if plot:
+            fig = trading_strategy.trading_chart(
+               plot_strategy=True, 
+               plot_volatility=False
+            )
+            fig.show()
 
         return self.bars_df
 
@@ -203,7 +211,7 @@ class TradingBot():
 
         try:
 
-            bars = self.exchange.fetch_ohlcv(pair, timeframe='30m', limit=50) # most recent candle keeps evolving
+            bars = self.exchange.fetch_ohlcv(pair, timeframe=self.frequency, limit=50) # most recent candle keeps evolving
             self.bars_df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             self.bars_df['timestamp'] = pd.to_datetime(self.bars_df['timestamp'], unit='ms')
             self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")

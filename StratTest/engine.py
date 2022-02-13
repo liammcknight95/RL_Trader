@@ -1,6 +1,7 @@
 from datetime import datetime
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.trend import EMAIndicator
+from ta.momentum import RSIIndicator
 
 import numpy as np
 import pandas as pd
@@ -50,7 +51,6 @@ class TradingStrategy():
             # bands created adding and subtracting std from moving average
             self.df[f'bollinger_hband_{params["window"]}'] = bb_indicator.bollinger_hband()
             self.df[f'bollinger_lband_{params["window"]}'] = bb_indicator.bollinger_lband()
-
             self.df[f'bollinger_mavg_{params["window"]}'] = bb_indicator.bollinger_mavg()
 
 
@@ -66,6 +66,14 @@ class TradingStrategy():
             ema_indicator = EMAIndicator(self.df['close'], window=params['window'])
 
             self.df[f'ema_{params["window"]}'] = ema_indicator.ema_indicator()
+
+        
+        elif indicator == 'RSI':
+
+            rsi_indicator = RSIIndicator(self.df['close'], window=params['window'])
+
+            self.df[f'rsi_{params["window"]}'] = rsi_indicator.rsi()
+
 
 
         if self.printout: print(f'Adding {indicator} with: {params}')
@@ -221,7 +229,7 @@ class TradingStrategy():
                     self.df.loc[sl_affected_range[1:], 'sl_hit'] = 0 # reset subsequent stop losses
 
 
-    def add_strategy(self, strategy, stop_loss_bps=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, **indicators):
+    def add_strategy(self, strategy, stop_loss_bps=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, indicators_params={}):
 
         self.strategy = strategy
         self.execution_type = execution_type ### self.execution_type
@@ -229,15 +237,17 @@ class TradingStrategy():
         self.comms_bps = comms_bps
         self.print_trades = print_trades
         # transform basis points commission in percentage
-        
+        # print(indicators_dict)
+        # indicators = indicators_dict['indicators_dict']
+        # print(indicators)
 
         if self.strategy == 'EMACrossOverLS':
 
-            self.short_ema = f"ema_{indicators['short_ema']}"
-            self.long_ema = f"ema_{indicators['long_ema']}"
+            self.short_ema = f"ema_{indicators_params['short_ema']}"
+            self.long_ema = f"ema_{indicators_params['long_ema']}"
 
-            self.add_indicator('EMAIndicator', window=indicators['short_ema'])
-            self.add_indicator('EMAIndicator', window=indicators['long_ema'])
+            self.add_indicator('EMAIndicator', window=indicators_params['short_ema'])
+            self.add_indicator('EMAIndicator', window=indicators_params['long_ema'])
 
             ## Generate Signals
             # signal: tiemseries of +1 when long, -1 when short, 0 when neutral
@@ -259,12 +269,12 @@ class TradingStrategy():
         elif self.strategy == 'EMACrossOverLO':
 
             # indicator column names
-            self.short_ema = f"ema_{indicators['short_ema']}"
-            self.long_ema = f"ema_{indicators['long_ema']}"
+            self.short_ema = f"ema_{indicators_params['short_ema']}"
+            self.long_ema = f"ema_{indicators_params['long_ema']}"
 
             # add indicators
-            self.add_indicator('EMAIndicator', window=indicators['short_ema'])
-            self.add_indicator('EMAIndicator', window=indicators['long_ema'])
+            self.add_indicator('EMAIndicator', window=indicators_params['short_ema'])
+            self.add_indicator('EMAIndicator', window=indicators_params['long_ema'])
 
             ## Generate Signals
             # signal: tiemseries of +1 when long, -1 when short, 0 when neutral
@@ -285,12 +295,13 @@ class TradingStrategy():
         elif self.strategy == 'BollingerBandsLO':
 
             # indicator column names
-            self.hband = f"bollinger_hband_{indicators['window']}"
-            self.lband = f"bollinger_lband_{indicators['window']}"
-            self.mavg = f"bollinger_mavg_{indicators['window']}"
+            self.hband = f"bollinger_hband_{indicators_params['window']}"
+            self.lband = f"bollinger_lband_{indicators_params['window']}"
+            self.mavg = f"bollinger_mavg_{indicators_params['window']}"
+            self.indicator_names = [self.hband, self.lband, self.mavg]
 
             # add indicators
-            self.add_indicator('BollingerBands', window=indicators['window'], window_dev=indicators['window_dev'])
+            self.add_indicator('BollingerBands', window=indicators_params['window'], window_dev=indicators_params['window_dev'])
 
             ## Generate Signals
             self.df[f'{self.strategy}_signal'] = np.where(self.df['close'] > self.df[self.hband], 1,
@@ -307,6 +318,28 @@ class TradingStrategy():
             self.df[f'{self.strategy}_new_position'] = np.where(
                 self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
                 np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))
+                
+        elif self.strategy == 'MultiIndic':
+            self.rsi = f"rsi_{indicators_params['window']}"
+            self.indicator_names = [self.rsi]
+
+            # add indicators
+            self.add_indicator('RSI', window=indicators_params['window'])
+
+            ## Generate Signals
+            self.df[f'{self.strategy}_signal'] = np.where(self.df[self.rsi] < 70, 1, 0)
+
+
+            # trades: flag when a new trade is generated - descriptive
+            self.df[f'{self.strategy}_trades'] = np.where(
+                self.df[f'{self.strategy}_signal'].diff() > 0, 'buy', 
+                np.where(self.df[f'{self.strategy}_signal'].diff() < 0, 'sell', 'hold'))       
+
+    
+            # trades: flag when a new trade is generated - numeric
+            self.df[f'{self.strategy}_new_position'] = np.where(
+                self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
+                np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))  
 
 
         # get groupers
@@ -323,21 +356,23 @@ class TradingStrategy():
         self._calculate_strat_metrics() # calculate strategy perfomance looking at individual trades
 
 
-    def trading_chart(self, plot_strategy=False, plot_volatility=False, **indicators):
+    def trading_chart(self, plot_strategy=False, plot_volatility=False):#, indicators_params={}):
 
-        indicator_names = indicators.values()
+        indicator_names = self.indicator_names
+        print(indicator_names, self.df.columns)
         plot_indic_color = ['#CCFFFF', '#FFCCFF', '#536868']
 
         fig = make_subplots(
-            rows=3, 
+            rows=4, 
             cols=1,
             shared_xaxes=True,
-            row_heights=[0.2, 0.6, 0.2],
+            row_heights=[0.5, 0.2, 0.15, 0.15],
             vertical_spacing=0.02,
             specs=[
                 [{"secondary_y": True}],
-                [{"secondary_y": True}],
                 [{"secondary_y": False}],
+                [{"secondary_y": True}],
+                [{"secondary_y": False}]
             ]
         )
 
@@ -352,24 +387,31 @@ class TradingStrategy():
                 increasing_line_color= 'green', 
                 decreasing_line_color= 'red'
             ),
-            row=2, 
+            row=1, 
             col=1
         )
         # candlestick xaxes
-        fig.update_xaxes(rangeslider_visible=False,    row=2,
-            col=1)
+        fig.update_xaxes(
+            rangeslider_visible=False,    
+            row=1,
+            col=1
+        )
 
 
         # add indicators to candlestick chart
         if len(indicator_names) > 0:
             for indic, color in zip (indicator_names, plot_indic_color):
+                # indicators requiring sec axis
+                if 'rsi' in indic: sec_y=True
+
                 fig.add_scatter(
                     x=self.df.index, 
                     y=self.df[indic], 
                     name=indic, 
                     marker=dict(color=color),
-                    row=2, 
-                    col=1
+                    row=1, 
+                    col=1,
+                    secondary_y=sec_y
                 )
 
         # if plot_volatility:
@@ -383,11 +425,22 @@ class TradingStrategy():
         #             secondary_y=True
         #     )
 
+        # add volumes
+        fig.add_scatter(
+            x=self.df.index, 
+            y=self.df['volume'], 
+            name=indic, 
+            # marker=dict(color=color),
+            row=2, 
+            col=1,
+            # secondary_y=sec_y
+        )
+
         if plot_strategy:
             # add buy trades marks
             fig.add_scatter(
                 x=self.df.index, 
-                y=self.df['close']+100, 
+                y=self.df['close'],#+100, 
                 showlegend=False,
                 mode='markers',
                 marker=dict(
@@ -398,14 +451,14 @@ class TradingStrategy():
                     colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
                     symbol=5
                 ),
-                row=2, 
+                row=1, 
                 col=1
             )
 
             # add sell trades marks
             fig.add_scatter(
                 x=self.df.index, 
-                y=self.df['close']-100, 
+                y=self.df['close'],#-100, 
                 showlegend=False, 
                 mode='markers',
                 marker=dict(
@@ -416,7 +469,7 @@ class TradingStrategy():
                     colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
                     symbol=6   
                     ),
-                    row=2, 
+                    row=1, 
                     col=1
             )
 
@@ -441,7 +494,7 @@ class TradingStrategy():
 
                 fig.add_scatter(
                     x=self.df.index, 
-                    y=self.df['close']-500, 
+                    y=self.df['close'],#-500, 
                     showlegend=False, 
                     mode='markers',
                     marker=dict(
@@ -452,7 +505,7 @@ class TradingStrategy():
                         colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#FF7F7F']],
                         symbol=106   
                         ),
-                        row=2, 
+                        row=1, 
                         col=1
                 )
 
@@ -463,7 +516,7 @@ class TradingStrategy():
                 x=self.df.index,
                 y=self.df[f'{self.strategy}_gross_cum_pctg_returns'],
                 name='gross_performance',
-                row=3,
+                row=4,
                 col=1
             )
 
@@ -472,7 +525,7 @@ class TradingStrategy():
                 x=self.trades_df['liquidated_at'],
                 y=self.trades_df['cum_trades_pctg_return'],
                 name='net_performance',
-                row=3,
+                row=4,
                 col=1
             )
 
@@ -492,7 +545,7 @@ class TradingStrategy():
                     # colorscale=[[0, '#FF7F7F'], [1, 'green']],
                     symbol=0  
                     ),
-                row=1,
+                row=3,
                 col=1,
                 secondary_y=False
             )
@@ -505,7 +558,7 @@ class TradingStrategy():
                 name='position',
                 mode='lines',
                 marker=dict(color=('#ffeded')),
-                row=1,
+                row=3,
                 col=1,
                 secondary_y=True
             )
