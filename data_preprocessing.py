@@ -10,10 +10,14 @@ from os import listdir
 from os.path import isfile, join
 from concurrent import futures
 import re
+from timer import Timer
+import logging
 
 import dask.dataframe as dd
 
 from configuration import config
+
+configuration = config()
 
 def intraday_vol_ret(px_ts, span=100):
     '''
@@ -106,7 +110,7 @@ def train_test_split(df, pctg_split=0.7, stdz_depth=1):
     return df_train, df_test
 
 
-def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), depth=100, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
+def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), depth=100):#, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
     ''' 
     Wrap up import data steps:
         - Read/import price data
@@ -128,9 +132,10 @@ def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), dep
 
     # import px
     results_px = get_lob_data(pair, date_start, date_end, frequency, depth)
-    df_px = dd.read_csv(results_px, compression='gzip').compute()
+    # print(results_px)
+    df_px = dd.read_parquet(results_px, engine='pyarrow').compute()
 
-    # import trades
+    # import trades 
     results_trade = get_trade_data(pair, date_start, date_end, frequency)
     df_trade = dd.read_csv(results_trade, compression='gzip').compute()
 
@@ -138,12 +143,12 @@ def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), dep
     # merge and clean
     df_data = data_cleaning(df_px, df_trade)
     print(df_data.shape)
-    print(stdz_depth, norm_type, roll)
+    # print(stdz_depth, norm_type, roll)
     # standardize
-    print(norm_type, roll)
-    df_data_stdz = data_standardization(df_data, norm_type=norm_type, roll=roll, stdz_depth=1)
+    # print(norm_type, roll)
+    # df_data_stdz = data_standardization(df_data, norm_type=norm_type, roll=roll, stdz_depth=1)
 
-    return df_data, df_data_stdz
+    return df_data#df_data#, df_data_stdz
 
 # Higher level workflow function to keep notebooks tidy
 # 1) import_px_data looks for standardized cached files in Experiments/cache (top ob train/test and depth train/test)
@@ -341,35 +346,220 @@ def standardize(ts, stdz_depth, norm_type='z_score', roll=0):
         print('Normalization not perfmed, please check your code')
 
 
-def get_lob_download_only(pair, date_start, date_end):
-    ''' lightweight version of get_lob_data only for data download'''
+def get_lob_download_only(pair, date_start, date_end, dnwld_type, configuration=configuration):
+    ''' lightweight version of get_lob_data only for data download
+        dnwld_type: lob or trade
+    '''
 
-    configuration = config()
-    raw_data_folder = configuration['folders']['raw_lob_data']
-
+    raw_data_folder = configuration['folders'][f'raw_{dnwld_type}_data'] # raw data local destination folder
     date_start = datetime.strptime(date_start, '%Y-%m-%d')
     date_end = datetime.strptime(date_end, '%Y-%m-%d')
 
     # Loop through day folders
     date_to_process = date_start
     while date_to_process <= date_end:
-        day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
+        try:
+            day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
 
-        if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
             s3_resource = get_s3_resource()
-            lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
-            os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+            data_bucket = s3_resource.Bucket(configuration['buckets'][f'{dnwld_type}_data'])
 
-            keys = []
-            for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
-                keys.append(obj.key)
 
-            download_s3_folder(lob_data_bucket, day_folder, keys)
-            shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
-        else:
-            print(f'{raw_data_folder}/{pair}/{day_folder} already downloaded')
+            if dnwld_type == 'lob':
+                # check if diretory exists, if not redownload
+                raw_file_folder = f'{raw_data_folder}/{pair}/{day_folder}' # directory where lob data is downloaded
+                if not os.path.isdir(raw_file_folder):
+                    s3_resource = get_s3_resource()
+                    data_bucket = s3_resource.Bucket(configuration['buckets'][f'{dnwld_type}_data'])
 
-        date_to_process += timedelta(days=1)
+                    os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+
+                    keys = []
+                    for obj in data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
+                        keys.append(obj.key)
+
+                    download_s3_folder(data_bucket, day_folder, keys)
+                    shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', raw_file_folder)
+                else:
+                    print(f'Found {raw_file_folder}')
+            
+            elif dnwld_type == 'trade':
+                # check if file exists, if not redownload
+                raw_file_name = f'{pair}-{datetime.strftime(date_to_process, "%Y%m%d")}.csv.gz'
+                raw_file_path = f'{raw_data_folder}/{pair}/{raw_file_name}'
+                
+                if not os.path.isfile(raw_file_path):
+                
+                    data_bucket.download_file(f'{pair}/{raw_file_name}', f'{raw_file_path}')
+                    print(f'Downloaded {raw_file_name} from S3')  
+
+                else:
+                    print(f'Found {raw_file_path}')
+
+            else:
+                print(f'{raw_data_folder}/{pair}/{day_folder} already downloaded')
+
+            date_to_process += timedelta(days=1)
+
+        except Exception as e:
+            print(f'Exception raised for: {dnwld_type} data, {date_to_process} - {e}')
+            date_to_process += timedelta(days=1)
+
+
+
+# def get_trades_download_only(pair, date_start, date_end, configuration=configuration):
+#     ''' lightweight version of get_lob_data only for data download'''
+
+#         ''' lightweight version of get_lob_data only for data download'''
+
+#     raw_data_folder = configuration['folders']['raw_lob_data']
+
+#     date_start = datetime.strptime(date_start, '%Y-%m-%d')
+#     date_end = datetime.strptime(date_end, '%Y-%m-%d')
+
+#     # Loop through day folders
+#     date_to_process = date_start
+#     while date_to_process <= date_end:
+#         day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
+
+#         if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
+#             s3_resource = get_s3_resource()
+#             lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
+#             os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+
+#             keys = []
+#             for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
+#                 keys.append(obj.key)
+
+#             download_s3_folder(lob_data_bucket, day_folder, keys)
+#             shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
+#         else:
+#             print(f'{raw_data_folder}/{pair}/{day_folder} already downloaded')
+
+#         date_to_process += timedelta(days=1) = configuration['folders']['raw_lob_data']
+
+#     date_start = datetime.strptime(date_start, '%Y-%m-%d')
+#     date_end = datetime.strptime(date_end, '%Y-%m-%d')
+
+#     # Loop through day folders
+#     date_to_process = date_start
+#     while date_to_process <= date_end:
+#         day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
+
+#         if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
+#             s3_resource = get_s3_resource()
+#             lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
+#             os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+
+#             keys = []
+#             for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
+#                 keys.append(obj.key)
+
+#             download_s3_folder(lob_data_bucket, day_folder, keys)
+#             shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
+#         else:
+#             print(f'{raw_data_folder}/{pair}/{day_folder} already downloaded')
+
+#         date_to_process += timedelta(days=1)
+
+
+@Timer(text="# Total time elapsed: {:.2f} seconds", logger=logging.info)
+def ingest_single_day(pair, date_to_process, frequency=timedelta(seconds=10), lob_depth=10, configuration=configuration):
+    
+    assert frequency >= timedelta(seconds=1), 'Frequency must be equal to or greater than 1 second'
+
+    # Load all files in to a dictionary
+    resampled_data_folder = configuration['folders']['resampled_data']
+    day_cache_file_name = f'{datetime.strftime(date_to_process, "%Y-%m-%d")}.csv.gz'
+    freq = f'{int(frequency.total_seconds())}s'
+
+
+    os.makedirs(f'{resampled_data_folder}/{pair}/{lob_depth}_levels/original_frequency', exist_ok=True)
+    os.makedirs(f'{resampled_data_folder}/{pair}/{lob_depth}_levels/{freq}', exist_ok=True)
+
+    raw_data_folder = configuration['folders']['raw_lob_data']
+    day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
+    raw_data_path = f"{raw_data_folder}/{pair}/{day_folder}"
+    resampled_file_path = f'{resampled_data_folder}/{pair}/{lob_depth}_levels/{freq}/{day_cache_file_name}'
+    original_file_name = f'{resampled_data_folder}/{pair}/{lob_depth}_levels/original_frequency/{day_cache_file_name}'
+
+    raw_data = {} # empty dict to update with incoming json
+    processed_data = []
+    if os.path.isfile(resampled_file_path):
+        print(f'Found {resampled_file_path}')
+
+    else:
+        for file_name in os.listdir(raw_data_path):
+
+            try:
+                with gzip.open(f'{raw_data_path}/{file_name}', 'r') as f:
+                    json_string = f.read().decode('utf-8')
+                    frozen = json_string.count('"isFrozen": "1"')
+                    if frozen > 0:
+                        print(f'Frozen {frozen} snapshots')
+                raw_data_temp = load_lob_json(json_string)
+
+            except Exception as e:
+                print(e.errno)
+                print(e)
+
+            raw_data.update(raw_data_temp)
+
+        # check for gaps in the data: number of seconds in a day / frequencey in seconds
+        snapshot_count_day = int(24 * 60 * 60 / frequency.total_seconds())
+        if len(raw_data) != snapshot_count_day:
+            diff = snapshot_count_day - len(raw_data)
+            if diff > 0:
+                print(f'{diff} gaps in {original_file_name}')
+            else:
+                print(f'{diff * -1} additional data points in {original_file_name}')
+
+
+        #TODO fix sequence order
+
+        raw_data_frame = pd.DataFrame.from_dict(raw_data, orient='index')
+        raw_data_frame.reset_index(inplace=True)
+        raw_data_frame['index'] = raw_data_frame['index'].str[-15:]
+        raw_data_frame['index'] = pd.to_datetime(raw_data_frame['index'], format='%Y%m%d_%H%M%S')
+        raw_data_frame.set_index('index',drop=True,inplace=True)
+        raw_data_frame.sort_index(inplace=True)
+        idx_start = date_to_process
+        idx_end = date_to_process + timedelta(days=1) - timedelta(seconds=1)
+        idx = pd.date_range(idx_start, idx_end, freq='1s')
+        raw_data_frame = raw_data_frame.reindex(idx).ffill().fillna(method='bfill') # forward fill gaps and back fill first item if missing
+
+        # Convert hierarchical json data in to tabular format
+        levels = list(range(lob_depth))
+        for row in raw_data_frame.itertuples():
+
+            ask_price, ask_volume = zip(* row.asks[0:lob_depth])
+            bid_price, bid_volume = zip(* row.bids[0:lob_depth])
+            sequences = [row.seq] * lob_depth
+            datetimes = [row.Index] * lob_depth
+
+            processed_data.append(list(zip(
+                ask_price,
+                ask_volume,
+                bid_price,
+                bid_volume,
+                levels,
+                sequences,
+                datetimes
+            )))
+
+    # unravel nested structure and force data types
+    day_data = pd.DataFrame([y for x in processed_data for y in x], #flatten the list of lists structure
+                    columns = ['Ask_Price', 'Ask_Size', 'Bid_Price', 'Bid_Size','Level', 'Sequence','Datetime'])
+
+    day_data['Ask_Price'] = day_data['Ask_Price'].astype('float64')
+    day_data['Bid_Price'] = day_data['Bid_Price'].astype('float64')
+    day_data['Sequence'] = day_data['Sequence'].astype('int64')
+    day_data.sort_values(by=['Datetime', 'Level'], inplace=True)
+    day_data.to_csv(original_file_name, compression='gzip')
+
+    return day_data
+
+
 
 
 
@@ -410,7 +600,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
     date_to_process = date_start
     while date_to_process <= date_end:
         day_folder = datetime.strftime(date_to_process, '%Y/%m/%d')
-        day_cache_file_name = f'{datetime.strftime(date_to_process, "%Y-%m-%d")}.csv.gz'
+        day_cache_file_name = f'{datetime.strftime(date_to_process, "%Y-%m-%d")}'
         resampled_file_path = f'{resampled_data_folder}/{pair}/{lob_depth}_levels/{freq}/{day_cache_file_name}'
         if os.path.isfile(resampled_file_path):
             print(f'Found {resampled_file_path}')
@@ -418,7 +608,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
             print(f'Generating {resampled_file_path}')
             original_file_name = f'{resampled_data_folder}/{pair}/{lob_depth}_levels/original_frequency/{day_cache_file_name}'
             if os.path.isfile(original_file_name):
-                day_data = pd.read_csv(original_file_name, parse_dates=['Datetime'])
+                day_data = pd.read_parquet(original_file_name)#, parse_dates=['Datetime'])
             else:
                 # empty json and nested list every new day processed
                 raw_data = {} # empty dict to update with incoming json
@@ -504,7 +694,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
                 day_data['Bid_Price'] = day_data['Bid_Price'].astype('float64')
                 day_data['Sequence'] = day_data['Sequence'].astype('int64')
                 day_data.sort_values(by=['Datetime', 'Level'], inplace=True)
-                day_data.to_csv(original_file_name, compression='gzip')
+                day_data.to_parquet(original_file_name)
 
             # create additional features useful for resampling
             day_data['Mid_Price'] = (day_data['Ask_Price'] + day_data['Bid_Price']) / 2
@@ -559,7 +749,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
 
             # merge first level order book and depth features
             df_px_lv0 = day_data_grp[day_data_grp['Level']==0][['Datetime', 'Ask_Price', 'Bid_Price', 'Mid_Price']].set_index('Datetime')
-            df_px_final = pd.merge(df_px_lv0, df_depth, left_index=True, right_index=True, how='left')
+            df_px_final = pd.merge(df_px_lv0, df_depth, left_index=True, right_index=True, how='left').reset_index()
 
             # imputation, fill NAs left from depth aggregation
             level_cols = [col for col in df_depth.columns if 'Level' in col]
@@ -568,7 +758,7 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), 
             df_px_final.loc[:,level_cols] = df_px_final.loc[:,level_cols].fillna(-1).astype('int64') # assign negative level value if no quote meet spread criteria
             df_px_final.loc[:, size_cols] = df_px_final.loc[:, size_cols].fillna(0).astype('float64') # and assign zero size to those
 
-            df_px_final.to_csv(resampled_file_path, compression='gzip')
+            df_px_final.to_parquet(resampled_file_path)
 
         date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
         data.append(resampled_file_path)
