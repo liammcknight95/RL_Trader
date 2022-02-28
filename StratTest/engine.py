@@ -13,19 +13,21 @@ from plotly.subplots import make_subplots
 class TradingStrategy():
 
     def __init__(self, data, frequency, printout=False):
-        self.df = data # dataframe with open, high, low, close, volume columns
+        assert isinstance(data.index, pd.DatetimeIndex), 'DataFrame passed does not have a datetime index'
+        # if data.index.freq == frequency: self.df = data # dataframe with open, high, low, close, volume columns
+        self.resample_data(data, frequency)
         self.frequency = frequency
         self.printout = printout
         self.strategy = ''
 
 
-    def resample_data(self):
+    def resample_data(self, data, frequency):
 
         ''' Method to be called if the dataframe is at a lower granularity than desired dataset '''
         
         # resample data to wanted frequency
-
-        self.df = self.df.groupby(pd.Grouper(level='Datetime', freq='30min')).agg(
+        print(f'Resampling data from {data.index.freq} to {frequency}')
+        self.df = data.groupby(pd.Grouper(level=data.index.name, freq=frequency)).agg(
             close=('Mid_Price', 'last'),
             open=('Mid_Price', 'first'),
             high=('Mid_Price', max),
@@ -432,15 +434,34 @@ class TradingStrategy():
         #     )
 
         # add volumes
-        fig.add_scatter(
+        # fig.add_scatter(
+        #     # x=self.df.index, 
+        #     # y=self.df['volume'], 
+        #     # name='volume', 
+        #     # marker=dict(color=color),
+        #     row=2, 
+        #     col=1,
+        #     # secondary_y=sec_y
+        # )
+
+        fig.add_bar(
             x=self.df.index, 
-            y=self.df['volume'], 
-            name=indic, 
-            # marker=dict(color=color),
+            y=self.df['amount_sell'], 
+            name='amount_sell', 
+            marker=dict(color='Crimson'),
             row=2, 
             col=1,
-            # secondary_y=sec_y
+        )        
+        fig.add_bar(
+            x=self.df.index, 
+            y=self.df['amount_buy'], 
+            name='amount_buy', 
+
+            marker=dict(color='LightSkyBlue'),
+            row=2, 
+            col=1,
         )
+
 
         if plot_strategy:
             # add buy trades marks
@@ -573,10 +594,13 @@ class TradingStrategy():
 
         # update subplots layouts
         fig.update_layout(
-            yaxis1=dict(title="Trade Net Return"),
-            yaxis2=dict(title="Position"),
-            yaxis3=dict(title="Price Chart"),
-            yaxis4=dict(title="Strategy Return"),
+            barmode="relative",
+            yaxis1=dict(title="Price chart"),
+            yaxis2=dict(title=""),
+            yaxis3=dict(title="Volume"),
+            yaxis4=dict(title="Trade Net Ret"), 
+            yaxis5=dict(title="Position"), 
+            yaxis6=dict(title="Return"),
         )
 
         # general layout
@@ -589,6 +613,8 @@ class TradingStrategy():
             template="plotly_dark",
             # plot_bgcolor='rgb(10,10,10)'
         )
+
+
 
         return fig
 
