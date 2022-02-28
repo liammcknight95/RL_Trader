@@ -563,7 +563,7 @@ def ingest_single_day(pair, date_to_process, frequency=timedelta(seconds=10), lo
 
 
 
-def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=10), lob_depth=10):
+def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=60), lob_depth=100):
     '''
     Function to get limit orde book snapshots time series
 
@@ -853,7 +853,7 @@ def load_lob_json(json_string):
     return json_dict
 
 
-def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)):
+def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=60)):
     '''
     Function that returns a dataframe of resampled trade data and ready
     to be concatenated to a quotes dataframe with depth (Level = -1)
@@ -888,6 +888,7 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
             print(f'Generating {resampled_file_path}')
             raw_file_name = f'{pair}-{datetime.strftime(date_to_process, "%Y%m%d")}.csv.gz'
             raw_file_path = f'{raw_data_folder}/{pair}/{raw_file_name}'
+            os.makedirs(f'{raw_data_folder}/{pair}', exist_ok=True)
 
             if not os.path.isfile(raw_file_path):
                 s3_resource = get_s3_resource()
@@ -943,9 +944,10 @@ def get_trade_data(pair, date_start, date_end, frequency = timedelta(seconds=10)
                     #print(f'Non-continuous data being processed. imputing avg values for bid or ask prices at the beginning of {date_to_process}')
                     # NOT ideal cause we are leaking information
                     #prev_file_px = df_trades_piv[trade_px_cols].dropna().iloc[0]
-                    continue
+                    print('inside block')
+                    pass
 
-
+            print('outside if block')
                     
             df_trades_piv.to_csv(resampled_file_path, compression='gzip')
 

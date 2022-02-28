@@ -23,24 +23,27 @@ class TradingStrategy():
 
         ''' Method to be called if the dataframe is at a lower granularity than desired dataset '''
         
-        self.df = self.df.resample(self.frequency, label='right').agg( # closing time of candlestick
-            {
-            'Mid_Price': ['last', 'first', np.max, np.min], 
+        # resample data to wanted frequency
+
+        self.df = self.df.groupby(pd.Grouper(level='Datetime', freq='30min')).agg(
+            close=('Mid_Price', 'last'),
+            open=('Mid_Price', 'first'),
+            high=('Mid_Price', max),
+            low=('Mid_Price', min),
+            Bid_Size_30bps=('Bid_Size_30bps', np.mean),
+            Ask_Size_30bps=('Ask_Size_30bps', np.mean),
+            amount_buy=('amount_buy', np.sum),
+            amount_sell=('amount_sell', np.sum),
+            wav_price_buy=('wav_price_buy', np.mean),
+            wav_price_sell=('wav_price_sell', np.mean),
+            unique_orders_buy=('unique_orders_buy', np.sum),
+            unique_orders_sell=('unique_orders_sell', np.sum)
+            # 'Mid_Price': ['last', 'first', np.max, np.min], 
             # 'volume': np.sum
-            }
-        )
-
-        self.df.columns = self.df.columns.get_level_values(1)
-
-        self.df['close'] = self.df['last']
-        self.df['open'] = self.df['first']
-        self.df['high'] = self.df['amax']
-        self.df['low'] = self.df['amin']
-        # data_resampled['volume'] = data_resampled['sum']
+            
+        ).copy()
+        self.df['volume'] = self.df['amount_buy'] + self.df['amount_sell']
         self.df.index.name = 'datetime'
-
-        self.df = self.df[['open', 'high', 'low', 'close']]
-        
 
     def add_indicator(self, indicator, **params):
 
@@ -271,6 +274,7 @@ class TradingStrategy():
             # indicator column names
             self.short_ema = f"ema_{indicators_params['short_ema']}"
             self.long_ema = f"ema_{indicators_params['long_ema']}"
+            self.indicator_names = [self.short_ema, self.long_ema]
 
             # add indicators
             self.add_indicator('EMAIndicator', window=indicators_params['short_ema'])
@@ -401,8 +405,10 @@ class TradingStrategy():
         # add indicators to candlestick chart
         if len(indicator_names) > 0:
             for indic, color in zip (indicator_names, plot_indic_color):
+                print(indic)
                 # indicators requiring sec axis
                 if 'rsi' in indic: sec_y=True
+                else: sec_y=False
 
                 fig.add_scatter(
                     x=self.df.index, 
