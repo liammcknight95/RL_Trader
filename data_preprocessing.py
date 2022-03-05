@@ -110,7 +110,7 @@ def train_test_split(df, pctg_split=0.7, stdz_depth=1):
     return df_train, df_test
 
 
-def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), depth=100):#, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
+def import_data(pair, date_start, date_end, include_trades=True, frequency=timedelta(seconds=60), depth=100):#, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
     ''' 
     Wrap up import data steps:
         - Read/import price data
@@ -134,12 +134,20 @@ def import_data(pair, date_start, date_end, frequency=timedelta(seconds=60), dep
     results_px = get_lob_data(pair, date_start, date_end, frequency, depth)
     # print(results_px)
     df_px = dd.read_parquet(results_px, engine='pyarrow').compute()
+    print('px data shape:', df_px.shape)
+    if include_trades:
+        # import trades 
+        results_trade = get_trade_data(pair, date_start, date_end, frequency)
+        df_trade = dd.read_csv(results_trade, compression='gzip').compute()
 
-    # import trades 
-    results_trade = get_trade_data(pair, date_start, date_end, frequency)
-    df_trade = dd.read_csv(results_trade, compression='gzip').compute()
+        print('trades data shape:', df_trade.shape)
+        
+    else: # do some basic cleaning to data px
+        df_px['Datetime'] = pd.to_datetime(df_px['Datetime'], format='%Y-%m-%d %H:%M:%S')
+        df_px.sort_values(by='Datetime', inplace=True)
+        df_px.set_index('Datetime', inplace=True)
+        return df_px
 
-    print(df_trade.shape, df_px.shape)
     # merge and clean
     df_data = data_cleaning(df_px, df_trade)
     print(df_data.shape)

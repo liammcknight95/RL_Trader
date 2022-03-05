@@ -12,10 +12,11 @@ from plotly.subplots import make_subplots
 
 class TradingStrategy():
 
-    def __init__(self, data, frequency, printout=False):
+    def __init__(self, data, frequency, mode='testing' , printout=False):
         assert isinstance(data.index, pd.DatetimeIndex), 'DataFrame passed does not have a datetime index'
         # if data.index.freq == frequency: self.df = data # dataframe with open, high, low, close, volume columns
-        self.resample_data(data, frequency)
+        if mode=='testing': self.resample_data(data, frequency)
+        elif mode=='live': self.df = data
         self.frequency = frequency
         self.printout = printout
         self.strategy = ''
