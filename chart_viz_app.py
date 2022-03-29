@@ -10,7 +10,7 @@ import pandas as pd
 from chart_viz_charting_layout import charting_page_layout
 import chart_viz_charting
 from chart_viz_downloading_layout import downloading_page_layout
-
+import chart_viz_downloading
 
 navbar = dbc.Navbar(
     dbc.Container(

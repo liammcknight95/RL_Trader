@@ -21,8 +21,9 @@ controls = dbc.Card(
                             options=[
                                 {"label": cur, "value": cur} for cur in currencies
                             ],
-                            value="USDT_BTC",
-                            multi=True
+                            value=["USDT_BTC"],
+                            multi=True,
+                            persistence=True
                         ),
                     ],
                 ),
@@ -40,7 +41,8 @@ controls = dbc.Card(
                                 {"label": freq, "value": freq} for freq in frequencies
                             ],
                             value="30min",
-                            multi=True
+                            multi=True,
+                            persistence=True
                         ),
                     ],
                 ),  
@@ -51,11 +53,28 @@ controls = dbc.Card(
 
         dbc.Row(
             [
-                dbc.Label("Select date range"),
-                dcc.DatePickerRange(
-                    id="download-date-range",
-                    display_format='MMM Do, YY',
-                    min_date_allowed=date(2021, 1, 1),
+                dbc.Col(
+                    [
+                        dbc.Label("Select date range"),
+                        dcc.DatePickerRange(
+                            id="download-date-range",
+                            display_format='MMM Do, YY',
+                            min_date_allowed=date(2021, 1, 1),
+                            persistence=True
+                        ),
+                    ],
+                    width=8
+                ),
+                dbc.Col(
+                    [
+                        dbc.Button(
+                            'Start Download', 
+                            id='download-start-button', 
+                            n_clicks=0,
+                            style={'marginTop':'38px'}
+                        )
+                    ],
+                    width=4
                 ),
             ]
         ),
@@ -66,7 +85,7 @@ controls = dbc.Card(
 
 data_overview = dbc.Card(
     dcc.Graph(
-        id="download-data-overview",
+        id="download-data-overview-chart",
         figure={
             'layout': go.Layout(
             paper_bgcolor='rgba(0,0,0,0)',
@@ -85,8 +104,7 @@ downloading_page_layout = dbc.Container(
         dbc.Row(
             [
                 dbc.Col(controls, width=4),
-                dbc.Col(data_overview, md=8,
-                ),
+                dbc.Col(data_overview, md=8,),
             ],
             style={'maxHeight':'80vh'}
         ),
