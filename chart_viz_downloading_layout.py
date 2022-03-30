@@ -37,6 +37,7 @@ controls = dbc.Card(
                         dbc.Label("Frequency"),
                         dcc.Dropdown(
                             id="download-store_freqs",
+                            className="dark-dd-border",
                             options=[
                                 {"label": freq, "value": freq} for freq in frequencies
                             ],
@@ -78,22 +79,49 @@ controls = dbc.Card(
                 ),
             ]
         ),
+
+        html.Br(),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        dbc.Label("Select date range"),
+                        html.P('Waiting for something to happen', id='download-output-text')
+                    ],
+                    width=8
+                ),
+                dbc.Col(
+                    [
+                        html.P('Placeholder', id='download-output-text2')
+                    ],
+                    width=4
+                ),
+            ]
+        ),
+
     ],
     style={'minHeight':'800px', 'height':'100%'},
     body=True,
 )
 
 data_overview = dbc.Card(
-    dcc.Graph(
-        id="download-data-overview-chart",
-        figure={
-            'layout': go.Layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            height=600
-            )
-        }
-    ),
+    [
+        dcc.Graph(
+            id="download-data-overview-chart",
+            figure={
+                'layout': go.Layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                height=600
+                )
+            }
+        ),
+
+        dcc.Store(
+            id='download-existing-file-data'
+        )
+    ],
     style={'minHeight':'800px', 'height':'100%'},
     body=True,
 ),

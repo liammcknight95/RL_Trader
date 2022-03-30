@@ -2,10 +2,12 @@
 # show gant chart with cached frequencies as well as raw data downloaded
 from datetime import date, datetime, timedelta
 from dash import Input, Output, State, callback
+
 import plotly.express as px
 import pandas as pd
 from configuration import config
 import glob
+
 
 configuration = config()
 raw_data_folder = configuration['folders']['raw_lob_data']
@@ -13,6 +15,7 @@ resampled_data_folder = configuration['folders']['resampled_data']
 
 @callback(
     Output("download-data-overview-chart", "figure"),
+    Output("download-existing-file-data", "data"),
     Input("download-ccy-pairs", "value"),
     Input("download-date-range", 'start_date'),
     Input("download-date-range", "end_date")
@@ -49,4 +52,5 @@ def chart_downloads(pairs, start_date, end_date):
         barmode="group", 
         template="plotly_dark"
     )
-    return fig
+    return fig, dwnld_df_filt.to_dict('records')
+
