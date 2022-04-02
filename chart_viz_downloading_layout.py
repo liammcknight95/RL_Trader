@@ -11,6 +11,8 @@ controls = dbc.Card(
             html.P('Controls', style={'fontSize':'22px', 'fontWeight':'bold'})
         ),
 
+        html.Br(),
+
         dbc.Row(
             [
                 dbc.Col(
@@ -30,6 +32,7 @@ controls = dbc.Card(
             ]
         ),
 
+        html.Br(),
         html.Br(),
 
         dbc.Row(
@@ -70,25 +73,6 @@ controls = dbc.Card(
         ),
 
         html.Br(),
-
-        dbc.Row(
-            [
-                dbc.Col(
-                    [
-                        dbc.Label("Select date range"),
-                        dcc.DatePickerRange(
-                            id="download-date-range",
-                            display_format='MMM Do, YY',
-                            min_date_allowed=date(2021, 1, 1),
-                            persistence=True
-                        ),
-                    ],
-                    width=6
-                ),
-
-            ]
-        ),
-
         html.Br(),
 
         dbc.Row(
@@ -125,6 +109,46 @@ controls = dbc.Card(
         ),
 
         html.Br(),
+        html.Br(),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        dbc.Label("Select date range"),
+                        dcc.DatePickerRange(
+                            id="download-date-range",
+                            display_format='MMM Do, YY',
+                            min_date_allowed=date(2021, 1, 1),
+                            persistence=True
+                        ),
+                    ],
+                    width=6
+                ),
+                dbc.Col(
+                    [
+                        html.P(
+                            'Waiting for something to happen', 
+                            id='download-output-text',
+                            # style={'marginTop':'20px'}
+                        ),
+                        dbc.Progress(
+                            id='download-pbar',
+                            style={'margin-top': 15}
+                        ),
+                        dcc.Interval(
+                            id='download-timer_progress',
+                            interval=2000
+                        ),
+                    ],
+                    width=6
+                ),
+
+            ]
+        ),
+
+        html.Br(),
+        html.Br(),
 
         dbc.Row(
             [
@@ -141,18 +165,8 @@ controls = dbc.Card(
                     width=6
                 ),
 
-                dbc.Col(
-                    [
-                        html.P(
-                            'Waiting for something to happen', 
-                            id='download-output-text',
-                            style={'marginTop':'38px'}
-                        )
-                    ],
-                    width=6
-                ),
             ],
-            justify='around'
+            justify='start'
         ),
 
     ],
@@ -214,6 +228,10 @@ data_overview = dbc.Card(
 
         dcc.Store(
             id='download-existing-file-data'
+        ),
+
+        dcc.Store(
+            id='resample-existing-file-data'
         )
     ],
     style={'minHeight':'400px', 'maxHeight':'90vh', 'height':'90vh'},

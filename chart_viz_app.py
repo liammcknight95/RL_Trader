@@ -7,7 +7,8 @@ import diskcache
 
 import numpy as np
 import pandas as pd
-import time, os, shutil, glob
+import time, os, sys, shutil, glob
+from datetime import datetime, timedelta
 
 # my modules
 from configuration import config
@@ -18,6 +19,7 @@ import chart_viz_downloading
 import data_preprocessing as dp
 
 import multiprocessing as mp
+from p_tqdm import p_map
 
 cache = diskcache.Cache('./cache')
 lcm = DiskcacheLongCallbackManager(cache)
@@ -68,29 +70,51 @@ def display_page(pathname):
         State("download-date-range", "end_date"),
         State("download-number-processors", "value"),
         State("download-min-files-redownload", "value"),
-        State("download-existing-file-data", "data")),
+        State("download-existing-file-data", "data"),
+        State("resample-existing-file-data", "data")),
     running=[(Output("download-start-button", "disabled"), True, False)],
     prevent_initial_call=True
 )
-def download_missing_files(dwnld_click, pairs, freqs, start_date, end_date, numb_processors, min_redown_file, dwnld_data):
+def download_missing_files(dwnld_click, pairs, freqs, start_date, end_date, numb_processors, min_redown_file, dwnld_data, rsmpl_data):
 
     if dwnld_click > 0:
 
         all_days_in_range = pd.date_range(start_date, end_date, freq='1D').astype('str').tolist()
         dwnld_df = pd.DataFrame(dwnld_data)
+        rsmpld_df = pd.DataFrame(rsmpl_data)
         
-        all_inputs = get_day_pair_inputs(dwnld_df, pairs, all_days_in_range, min_redown_file)
+        all_inputs = get_day_pair_inputs(dwnld_df, rsmpld_df, pairs, freqs, all_days_in_range, min_redown_file)
         print(f'Executing the following download jobs: {all_inputs} \nOn {numb_processors} different processors')
 
-        with mp.Pool(processes=numb_processors) as pool:
-            results = pool.starmap(dp.get_lob_data, all_inputs)
+        # for bar progress tqdm
+        std_err_backup = sys.stderr
+        file_prog = open('progress.txt', 'w')
+        sys.stderr = file_prog
+
+        # with mp.Pool(processes=numb_processors) as pool:
+        #     results = pool.starmap(dp.get_lob_data, all_inputs)
+
+        temp_input_df = pd.DataFrame(all_inputs, columns=['pair', 'date_start', 'date_end', 'resampling_frequency'])
+        results = p_map(dp.get_lob_data,
+            temp_input_df['pair'].tolist(), 
+            temp_input_df['date_start'].tolist(), 
+            temp_input_df['date_end'].tolist(), 
+            temp_input_df['resampling_frequency'].tolist(), 
+            **{"num_cpus": numb_processors}
+        )
+
+        file_prog.close()
+        sys.stderr = std_err_backup
 
         return f"Download terminated for {len(all_inputs)} files using {numb_processors} processors clicks:{dwnld_click}"
     else:
         return "Waiting for a btn click"
 
 
-def get_day_pair_inputs(dwnld_df, pairs, all_days_in_range, min_redown_file):
+def get_day_pair_inputs(dwnld_df, rsmpld_df, pairs, freqs, all_days_in_range, min_redown_file):
+    ''' Create a list of unique inputs to either download and resample or just resample 
+        Get LOB will run the appropriate checks to avoid redownload
+    '''
     all_inputs = []
     for pair in pairs:
         print(dwnld_df)
@@ -102,11 +126,26 @@ def get_day_pair_inputs(dwnld_df, pairs, all_days_in_range, min_redown_file):
         else: # cover scenario where there no data dwnld yet between dates
             downloaded_days_list = []
 
-        missing_days_list = [day for day in all_days_in_range if day not in downloaded_days_list]
-        inputs = [(pair, date, date) for date in missing_days_list]
-        all_inputs += inputs
+        resampling_frequency = timedelta(seconds=datetime.strptime(freqs,'%Mmin').minute * 60)
 
-    return all_inputs
+        missing_days_list = [day for day in all_days_in_range if day not in downloaded_days_list]
+        inputs_dwnld = [(pair, date, date, resampling_frequency) for date in missing_days_list]
+
+        all_inputs += inputs_dwnld
+
+        if rsmpld_df.shape[0]>0:
+            resampled_days_list = rsmpld_df[(rsmpld_df['pair']==pair)&(rsmpld_df['file_number']==1)]['date'].tolist()
+        else: # cover scenario where there no data dwnld yet between dates
+            resampled_days_list = []
+
+        missing_resampled_list = [day for day in all_days_in_range if day not in resampled_days_list]
+        inputs_rsmpld = [(pair, date, date, resampling_frequency) for date in missing_resampled_list]
+
+        all_inputs += inputs_rsmpld
+
+    all_inputs_unique = list(set(all_inputs))
+
+    return all_inputs_unique
 
 
 def delete_partial_days(dwnld_df, pair, min_redown_file):
