@@ -1,0 +1,54 @@
+/*  Custom dropdowns with dark theme - multi and single */
+
+.VirtualizedSelectOption {
+    background-color: #444;
+    color: white;
+}
+
+.VirtualizedSelectFocusedOption {
+    background-color: #2f4d6c;
+    font-size: 18px;
+    color: white;
+}
+
+.Select-control {
+    background-color: #444 !important;
+    border: black;
+  }
+
+.Select-value-label {
+    color: white;
+}
+
+.Select-value-icon {
+    color: white;
+}
+
+/*  single dropdown selected label */
+.has-value.Select--single > 
+.Select-control .Select-value .Select-value-label, .has-value.is-pseudo-focused.Select--single > 
+.Select-control .Select-value .Select-value-label{
+    color:white;
+}
+
+/*  Custom date range picker with dark theme */
+.DateRangePickerInput {
+    background-color: #444;
+}
+
+.DateInput_input {
+    background-color: #444;
+    color:white;
+    font-size: 0.9em;
+    /*width: 80%;*/
+}
+
+.DateRangePickerInput__withBorder {
+    border:black;
+}
+
+/*  Custom form label font */
+.form-label {
+    font-size: 18px;
+    font-weight: bold;
+}

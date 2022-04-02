@@ -1,6 +1,6 @@
 import dash_bootstrap_components as dbc
 from dash import dcc, html
-from chart_viz_config import currencies, frequencies
+from chart_viz_config import currencies, frequencies, min_files, n_processors
 from datetime import date
 import plotly.graph_objects as go
 
@@ -30,23 +30,42 @@ controls = dbc.Card(
             ]
         ),
 
+        html.Br(),
+
         dbc.Row(
             [
                 dbc.Col(
                     [
                         dbc.Label("Frequency"),
                         dcc.Dropdown(
-                            id="download-store_freqs",
+                            id="download-store-freqs",
                             className="dark-dd-border",
                             options=[
                                 {"label": freq, "value": freq} for freq in frequencies
                             ],
                             value="30min",
-                            multi=True,
+                            multi=False,
                             persistence=True
                         ),
                     ],
+                    width=6
                 ),  
+
+                dbc.Col(
+                    [
+                        dbc.Label("File Type"),
+                        dcc.Checklist(
+                            ['Quotes', 'Trades'],
+                            ['Quotes'],
+                            id='download-file-type-checklist',
+                            inline=True,
+                            persistence=True,
+                            inputStyle={"marginRight": "3px"},
+                            labelStyle={"marginRight": "15px"}
+                        )
+                    ],
+                    width=6
+                ),
             ]
         ),
 
@@ -64,19 +83,9 @@ controls = dbc.Card(
                             persistence=True
                         ),
                     ],
-                    width=8
+                    width=6
                 ),
-                dbc.Col(
-                    [
-                        dbc.Button(
-                            'Start Download', 
-                            id='download-start-button', 
-                            n_clicks=0,
-                            style={'marginTop':'38px'}
-                        )
-                    ],
-                    width=4
-                ),
+
             ]
         ),
 
@@ -86,43 +95,129 @@ controls = dbc.Card(
             [
                 dbc.Col(
                     [
-                        dbc.Label("Select date range"),
-                        html.P('Waiting for something to happen', id='download-output-text')
+                        dbc.Label("# of Processors"),
+                        dcc.Dropdown(
+                            id="download-number-processors",
+                            options=[
+                                {"label": freq, "value": freq} for freq in n_processors
+                            ],
+                            value=5,
+                            multi=False,
+                            persistence=True
+                        ),
                     ],
-                    width=8
-                ),
+                ),  
                 dbc.Col(
                     [
-                        html.P('Placeholder', id='download-output-text2')
+                        dbc.Label("Min Files Re-download"),
+                        dcc.Dropdown(
+                            id="download-min-files-redownload",
+                            options=[
+                                {"label": freq, "value": freq} for freq in min_files
+                            ],
+                            value=860,
+                            multi=False,
+                            persistence=True
+                        ),
                     ],
-                    width=4
-                ),
+                ),  
             ]
         ),
 
+        html.Br(),
+
+        dbc.Row(
+            [
+
+                dbc.Col(
+                    [
+                        dbc.Button(
+                            'Start Download', 
+                            id='download-start-button', 
+                            n_clicks=0,
+                            style={'marginTop':'38px'}
+                        )
+                    ],
+                    width=6
+                ),
+
+                dbc.Col(
+                    [
+                        html.P(
+                            'Waiting for something to happen', 
+                            id='download-output-text',
+                            style={'marginTop':'38px'}
+                        )
+                    ],
+                    width=6
+                ),
+            ],
+            justify='around'
+        ),
+
     ],
-    style={'minHeight':'800px', 'height':'100%'},
+    style={'minHeight':'400px', 'maxHeight':'90vh', 'height':'90vh'},
     body=True,
 )
 
 data_overview = dbc.Card(
     [
-        dcc.Graph(
-            id="download-data-overview-chart",
-            figure={
-                'layout': go.Layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                height=600
+        dbc.Row(
+            [
+                dbc.Col(
+                    dcc.Graph(
+                        id="download-overview-chart-raw-data",
+                        figure={
+                            'layout': go.Layout(
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            )
+                        },
+                        style={'height':'30vh'}
+                    ),
                 )
-            }
+            ],
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dcc.Graph(
+                        id="download-overview-chart-resampled-data",
+                        figure={
+                            'layout': go.Layout(
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            )
+                        },
+                        style={'height':'30vh'}
+                    ),
+                )
+            ],
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dcc.Graph(
+                        id="download-overview-chart-trades-data",
+                        figure={
+                            'layout': go.Layout(
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            # height=600
+                            )
+                        },
+                        style={'height':'30vh'}
+                    ),
+                )
+            ],
         ),
 
         dcc.Store(
             id='download-existing-file-data'
         )
     ],
-    style={'minHeight':'800px', 'height':'100%'},
+    style={'minHeight':'400px', 'maxHeight':'90vh', 'height':'90vh'},
+    # className="auto",
     body=True,
 ),
 
@@ -134,7 +229,7 @@ downloading_page_layout = dbc.Container(
                 dbc.Col(controls, width=4),
                 dbc.Col(data_overview, md=8,),
             ],
-            style={'maxHeight':'80vh'}
+            className="h-100"
         ),
     ],
     fluid=True,
