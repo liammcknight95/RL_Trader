@@ -1,7 +1,7 @@
 ### to do: check what files have already been cached on a given locaition (config file)
 # show gant chart with cached frequencies as well as raw data downloaded
 from datetime import date, datetime, timedelta
-from dash import Input, Output, State, callback
+from dash import Input, Output, State, callback, no_update
 
 import plotly.express as px
 import pandas as pd
@@ -91,17 +91,28 @@ def chart_resampled(pairs, start_date, end_date, frequency, finished_dwnld):
 
     resampled_files_df = pd.concat(resampled_df_list)
     resampled_files_df['file_number'] = 1
-    resampled_files_df_filt = resampled_files_df[(resampled_files_df['date']>=start_date)&(resampled_files_df['date']<=end_date)]
+    
+    # if any data to plot:
+    if resampled_files_df.shape[0]>0:
+        resampled_files_df_filt = resampled_files_df[(resampled_files_df['date']>=start_date)&(resampled_files_df['date']<=end_date)]
 
-    fig = px.bar(
-        resampled_files_df_filt, 
-        x='date', 
-        y='file_number', 
-        color='pair', 
-        barmode="group", 
-        template="plotly_dark",
-        title=f'Resampled Data {frequency}'
-    )
+        fig = px.bar(
+            resampled_files_df_filt, 
+            x='date', 
+            y='file_number', 
+            color='pair', 
+            barmode="group", 
+            template="plotly_dark",
+            title=f'Resampled Data {frequency}'
+        )
+
+    else:
+        resampled_files_df_filt = pd.DataFrame()
+        fig = px.bar(            
+            template="plotly_dark",
+            title=f'Resampled Data {frequency}'
+        )
+
     fig.update_layout(
         title_x=0.5,
         title_font_size=18,

@@ -19,7 +19,8 @@ import chart_viz_downloading
 import data_preprocessing as dp
 
 import multiprocessing as mp
-from p_tqdm import p_map
+import tqdm
+# from p_tqdm import p_map
 
 cache = diskcache.Cache('./cache')
 lcm = DiskcacheLongCallbackManager(cache)
@@ -91,17 +92,17 @@ def download_missing_files(dwnld_click, pairs, freqs, start_date, end_date, numb
         file_prog = open('progress.txt', 'w')
         sys.stderr = file_prog
 
-        # with mp.Pool(processes=numb_processors) as pool:
-        #     results = pool.starmap(dp.get_lob_data, all_inputs)
+        with mp.Pool(processes=numb_processors) as pool:
+            results = pool.starmap(dp.get_lob_data, all_inputs)
 
-        temp_input_df = pd.DataFrame(all_inputs, columns=['pair', 'date_start', 'date_end', 'resampling_frequency'])
-        results = p_map(dp.get_lob_data,
-            temp_input_df['pair'].tolist(), 
-            temp_input_df['date_start'].tolist(), 
-            temp_input_df['date_end'].tolist(), 
-            temp_input_df['resampling_frequency'].tolist(), 
-            **{"num_cpus": numb_processors}
-        )
+        # temp_input_df = pd.DataFrame(all_inputs, columns=['pair', 'date_start', 'date_end', 'resampling_frequency'])
+        # results = p_map(dp.get_lob_data,
+        #     temp_input_df['pair'].tolist(), 
+        #     temp_input_df['date_start'].tolist(), 
+        #     temp_input_df['date_end'].tolist(), 
+        #     temp_input_df['resampling_frequency'].tolist(), 
+        #     **{"num_cpus": numb_processors}
+        # )
 
         file_prog.close()
         sys.stderr = std_err_backup
@@ -192,7 +193,6 @@ def delete_partial_days(dwnld_df, pair, min_redown_file):
 
 
 
-## TODO: check why other partial days have not been downloaded
 ## update chart at the end
 ## add progress bar
 ## check if multiprocessing is possible for this

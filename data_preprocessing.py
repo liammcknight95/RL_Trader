@@ -809,7 +809,7 @@ def load_lob_json(json_string):
         json_dict = json.loads(json_string)
 
     except json.JSONDecodeError as e:
-        print(f'Malformed JSON in file at position {e.pos}')
+        print(f'Malformed JSON {e.msg} in file at position {e.pos} - {json_string[e.pos:e.pos+10]}')
 
         if '}0254}' in json_string:
             fixed_json_string = json_string.replace('}0254}', '}')
@@ -817,6 +817,12 @@ def load_lob_json(json_string):
 
         if e.msg == "Expecting ',' delimiter":
             fixed_json_string = json_string[:e.pos] + ', ' + json_string[e.pos:]
+            return load_lob_json(fixed_json_string)
+
+
+        if e.msg == "Expecting property name enclosed in double quotes":
+            #'{,"USDT_BTC-20220113_222010": {"asks"
+            fixed_json_string = '{' + json_string[e.pos+1:]
             return load_lob_json(fixed_json_string)
 
         if e.msg == 'Expecting value':
