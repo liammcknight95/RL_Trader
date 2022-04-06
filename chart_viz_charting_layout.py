@@ -81,8 +81,72 @@ def dynamic_strategy_controls(strategy):
 
 
     elif strategy == 'MultiIndic':
-        return []
+        return [
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                        dbc.Label("Short EMA"),
+                        dbc.Input(
+                            id="strategy-param-1", 
+                            type="number", 
+                            min=strategies[strategy]['short_ema'].min(), 
+                            max=strategies[strategy]['short_ema'].max(), 
+                            value=15
+                        ),
+                        ]
+                    )
+                ],
+                style={'display': 'none'}
+            ),
 
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                        dbc.Label("Short EMA"),
+                        dbc.Input(
+                            id="strategy-param-2", 
+                            type="number", 
+                            min=strategies[strategy]['long_ema'].min(), 
+                            max=strategies[strategy]['long_ema'].max(), 
+                            value=30
+                        ),
+                        ]
+                    )
+                ],
+                style={'display': 'none'}
+            ),
+        ]
+
+    elif strategy == 'Buy&Hold':
+        return [
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                        dbc.Input(
+                            id="strategy-param-1",
+                        ),
+                        ]
+                    )
+                ],
+                style={'display': 'none'}
+            ),
+
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                        dbc.Input(
+                            id="strategy-param-2", 
+                        ),
+                        ]
+                    )
+                ],
+                style={'display': 'none'}
+            ),
+        ]
 
 controls = dbc.Card(
     [
@@ -102,6 +166,7 @@ controls = dbc.Card(
                                 {"label": cur, "value": cur} for cur in currencies
                             ],
                             value="USDT_BTC",
+                            persistence=True
                         ),
                     ],
                 ),
@@ -119,6 +184,7 @@ controls = dbc.Card(
                                 {"label": freq, "value": freq} for freq in frequencies
                             ],
                             value="30min",
+                            persistence=True
                         ),
                     ],
                 ),  
@@ -134,6 +200,7 @@ controls = dbc.Card(
                     id="chart-date-picker-range",
                     display_format='MMM Do, YY',
                     min_date_allowed=date(2021, 1, 1),
+                    persistence=True
                 ),
             ]
         ),
@@ -150,6 +217,7 @@ controls = dbc.Card(
                             {"label": col, "value": col} for col in strategies.keys()
                         ],
                         value="BollingerBandsLO",
+                        persistence=True
                     ),
                 ],
             )

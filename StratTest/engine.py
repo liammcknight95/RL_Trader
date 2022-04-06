@@ -35,16 +35,20 @@ class TradingStrategy():
             low=('Mid_Price', min),
             Bid_Size_30bps=('Bid_Size_30bps', np.mean),
             Ask_Size_30bps=('Ask_Size_30bps', np.mean),
-            amount_buy=('amount_buy', np.sum),
-            amount_sell=('amount_sell', np.sum),
-            wav_price_buy=('wav_price_buy', np.mean),
-            wav_price_sell=('wav_price_sell', np.mean),
-            unique_orders_buy=('unique_orders_buy', np.sum),
-            unique_orders_sell=('unique_orders_sell', np.sum)
+            ## comment out until trades restored
+            # amount_buy=('amount_buy', np.sum),
+            # amount_sell=('amount_sell', np.sum),
+            # wav_price_buy=('wav_price_buy', np.mean),
+            # wav_price_sell=('wav_price_sell', np.mean),
+            # unique_orders_buy=('unique_orders_buy', np.sum),
+            # unique_orders_sell=('unique_orders_sell', np.sum)
             # 'Mid_Price': ['last', 'first', np.max, np.min], 
             # 'volume': np.sum
             
         ).copy()
+
+        self.df['amount_buy'] = 0
+        self.df['amount_sell'] = 0
         self.df['volume'] = self.df['amount_buy'] + self.df['amount_sell']
         self.df.index.name = 'datetime'
 
@@ -348,7 +352,21 @@ class TradingStrategy():
                 self.df[f'{self.strategy}_signal'].diff() > 0, +1, 
                 np.where(self.df[f'{self.strategy}_signal'].diff() < 0, -1, 0))  
 
+        elif self.strategy == 'Buy&Hold':
+            self.indicator_names = []
+            ## Generate Signals
+            self.df[f'{self.strategy}_signal'] = 1 # always long
+            # self.df.loc[0, f'{self.strategy}_signal'] = 1 # just buys signal at the beginning
 
+            # trades: flag when a new trade is generated - descriptive
+            self.df[f'{self.strategy}_trades'] = 'hold'
+            self.df.loc[self.df.index[0], f'{self.strategy}_trades'] = 'buy' # only 1 buy trade at the beginning
+            self.df.loc[self.df.index[-1], f'{self.strategy}_trades'] = 'sell'
+
+            # trades: flag when a new trade is generated - numeric
+            self.df[f'{self.strategy}_new_position'] = 0
+            self.df.loc[self.df.index[0], f'{self.strategy}_new_position'] = 1 # only 1 buy trade at the beginning
+            self.df.loc[self.df.index[-1], f'{self.strategy}_new_position'] = -1
         # get groupers
         self._calculate_trade_groupers()
 
@@ -361,7 +379,7 @@ class TradingStrategy():
 
         self._get_strat_gross_returns() # get strategy returns time series
         self._calculate_strat_metrics() # calculate strategy perfomance looking at individual trades
-
+        print(self.df)
 
     def trading_chart(self, plot_strategy=False, plot_volatility=False):#, indicators_params={}):
 
@@ -503,22 +521,6 @@ class TradingStrategy():
 
             # add stop loss
             if self.stop_loss_bps >0:
-                # fig.add_scatter(
-                #     x=self.df.index, 
-                #     y=self.df['close']+500, 
-                #     showlegend=False, 
-                #     mode='markers',
-                #     marker=dict(
-                #         size=12,
-                #         # I want the color to be red if trade is a sell
-                #         color=(
-                #             (self.df['sl_hit'] == 1)).astype('int'),
-                #         colorscale=[[0, 'rgba(255, 0, 0, 0)'], [1, '#B7FFA1']],
-                #         symbol=105   
-                #         ),
-                #         row=2, 
-                #         col=1
-                # )
 
                 fig.add_scatter(
                     x=self.df.index, 
@@ -606,13 +608,14 @@ class TradingStrategy():
 
         # general layout
         fig.update_layout(
-            width=1200,
-            height=700,
+            # width=1200,
+            # height=700,
             title=f'<b>{self.strategy} Strategy</b>',
             title_x=.5,
             # yaxis_title='USDT/BTC',
             template="plotly_dark",
-            # plot_bgcolor='rgb(10,10,10)'
+            # plot_bgcolor='rgba(0,0,0,0)',
+            # paper_bgcolor='rgba(0,0,0,0)',
         )
 
 

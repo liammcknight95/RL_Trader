@@ -88,8 +88,10 @@ def make_graph(cached_data, strategy, frequency, transaction_cost, stop_loss, pa
             # long_ema=long_ema
             window=param1, 
             window_dev=param2
-    ),
+    ), # abstract parameter name
     print_trades=False
 )
+    print(trading_strategy.df)
+
     fig = trading_strategy.trading_chart(plot_strategy=True)
     return fig
