@@ -10,13 +10,16 @@ from os import listdir
 from os.path import isfile, join
 from concurrent import futures
 import re
-from timer import Timer
+from decorators.timer import Timer
 import logging
 
 import dask.dataframe as dd
 
 from configuration import config
+from decorators.log_exceptions import exception_handler 
 
+# exception handler decorator
+logged = exception_handler('data_processing: {func.__name__}')
 configuration = config()
 
 def intraday_vol_ret(px_ts, span=100):
@@ -109,8 +112,8 @@ def train_test_split(df, pctg_split=0.7, stdz_depth=1):
 
     return df_train, df_test
 
-
-def import_data(pair, date_start, date_end, include_trades=True, frequency=timedelta(seconds=60), depth=100):#, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
+@logged
+def import_data(pair, date_start, date_end, s3_download=True, include_trades=True, frequency=timedelta(seconds=60), depth=100):#, norm_type='dyn_z_score', roll=1440, stdz_depth=1):
     ''' 
     Wrap up import data steps:
         - Read/import price data
@@ -130,9 +133,11 @@ def import_data(pair, date_start, date_end, include_trades=True, frequency=timed
         - stdz_depth: multiplier used in standardization, correspond to the leel of depth of the final dataset
         '''
 
+    
     # import px
-    results_px = get_lob_data(pair, date_start, date_end, frequency, depth)
+    results_px = get_lob_data(pair, date_start, date_end, frequency, depth, s3_download=s3_download)
     # print(results_px)
+    assert len(results_px)>0, 'No data to process'
     df_px = dd.read_parquet(results_px, engine='pyarrow').compute()
     print('px data shape:', df_px.shape)
     if include_trades:
@@ -571,7 +576,7 @@ def ingest_single_day(pair, date_to_process, frequency=timedelta(seconds=10), lo
 
 
 
-def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=60), lob_depth=100):
+def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=60), lob_depth=100, s3_download=True):
     '''
     Function to get limit orde book snapshots time series
 
@@ -618,91 +623,98 @@ def get_lob_data(pair, date_start, date_end, frequency = timedelta(seconds=60), 
             if os.path.isfile(original_file_name):
                 day_data = pd.read_parquet(original_file_name)#, parse_dates=['Datetime'])
             else:
-                # empty json and nested list every new day processed
-                raw_data = {} # empty dict to update with incoming json
-                processed_data = []
+                if s3_download:
+                    # empty json and nested list every new day processed
+                    raw_data = {} # empty dict to update with incoming json
+                    processed_data = []
 
-                if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
-                    s3_resource = get_s3_resource()
-                    lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
-                    os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
+                    if not os.path.isdir(f'{raw_data_folder}/{pair}/{day_folder}'):
+                        s3_resource = get_s3_resource()
+                        lob_data_bucket = s3_resource.Bucket(configuration['buckets']['lob_data'])
+                        os.makedirs(f'{raw_data_folder}/tmp/{pair}/{day_folder}', exist_ok=True)
 
-                    keys = []
-                    for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
-                        keys.append(obj.key)
+                        keys = []
+                        for obj in lob_data_bucket.objects.filter(Prefix=f'{pair}/{day_folder}'):
+                            keys.append(obj.key)
 
-                    download_s3_folder(lob_data_bucket, day_folder, keys)
-                    shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
+                        download_s3_folder(lob_data_bucket, day_folder, keys)
+                        shutil.move(f'{raw_data_folder}/tmp/{pair}/{day_folder}', f'{raw_data_folder}/{pair}/{day_folder}')
 
-                # Load all files in to a dictionary
-                for file_name in os.listdir(f'{raw_data_folder}/{pair}/{day_folder}'):
+                    # Load all files in to a dictionary
+                    for file_name in os.listdir(f'{raw_data_folder}/{pair}/{day_folder}'):
 
-                    try:
-                        with gzip.open(f'{raw_data_folder}/{pair}/{day_folder}/{file_name}', 'r') as f:
-                            json_string = f.read().decode('utf-8')
-                            frozen = json_string.count('"isFrozen": "1"')
-                            if frozen > 0:
-                                print(f'Frozen {frozen} snapshots')
-                        raw_data_temp = load_lob_json(json_string)
+                        try:
+                            with gzip.open(f'{raw_data_folder}/{pair}/{day_folder}/{file_name}', 'r') as f:
+                                json_string = f.read().decode('utf-8')
+                                frozen = json_string.count('"isFrozen": "1"')
+                                if frozen > 0:
+                                    print(f'Frozen {frozen} snapshots')
+                            raw_data_temp = load_lob_json(json_string)
 
-                    except Exception as e:
-                        print(e.errno)
-                        print(e)
+                        except Exception as e:
+                            print(e.errno)
+                            print(e)
 
-                    raw_data.update(raw_data_temp)
+                        raw_data.update(raw_data_temp)
 
-                # number of seconds in a day / frequencey in seconds
-                snapshot_count_day = int(24 * 60 * 60 / frequency.total_seconds())
-                if len(raw_data) != snapshot_count_day:
-                    diff = snapshot_count_day - len(raw_data)
-                    if diff > 0:
-                        print(f'{diff} gaps in {original_file_name}')
-                    else:
-                        print(f'{diff * -1} additional data points in {original_file_name}')
+                    # number of seconds in a day / frequencey in seconds
+                    snapshot_count_day = int(24 * 60 * 60 / frequency.total_seconds())
+                    if len(raw_data) != snapshot_count_day:
+                        diff = snapshot_count_day - len(raw_data)
+                        if diff > 0:
+                            print(f'{diff} gaps in {original_file_name}')
+                        else:
+                            print(f'{diff * -1} additional data points in {original_file_name}')
 
-                #del(raw_data['BTC_XRP-20200404_000000'])
+                    #del(raw_data['BTC_XRP-20200404_000000'])
 
-                #TODO fix sequence order
+                    #TODO fix sequence order
 
-                raw_data_frame = pd.DataFrame.from_dict(raw_data, orient='index')
-                raw_data_frame.reset_index(inplace=True)
-                raw_data_frame['index'] = raw_data_frame['index'].str[-15:]
-                raw_data_frame['index'] = pd.to_datetime(raw_data_frame['index'], format='%Y%m%d_%H%M%S')
-                raw_data_frame.set_index('index',drop=True,inplace=True)
-                raw_data_frame.sort_index(inplace=True)
-                idx_start = date_to_process
-                idx_end = date_to_process + timedelta(days=1) - timedelta(seconds=1)
-                idx = pd.date_range(idx_start, idx_end, freq='1s')
-                raw_data_frame = raw_data_frame.reindex(idx).ffill().fillna(method='bfill') # forward fill gaps and back fill first item if missing
+                    raw_data_frame = pd.DataFrame.from_dict(raw_data, orient='index')
+                    raw_data_frame.reset_index(inplace=True)
+                    raw_data_frame['index'] = raw_data_frame['index'].str[-15:]
+                    raw_data_frame['index'] = pd.to_datetime(raw_data_frame['index'], format='%Y%m%d_%H%M%S')
+                    raw_data_frame.set_index('index',drop=True,inplace=True)
+                    raw_data_frame.sort_index(inplace=True)
+                    idx_start = date_to_process
+                    idx_end = date_to_process + timedelta(days=1) - timedelta(seconds=1)
+                    idx = pd.date_range(idx_start, idx_end, freq='1s')
+                    raw_data_frame = raw_data_frame.reindex(idx).ffill().fillna(method='bfill') # forward fill gaps and back fill first item if missing
 
-                # Convert hierarchical json data in to tabular format
-                levels = list(range(lob_depth))
-                for row in raw_data_frame.itertuples():
+                    # Convert hierarchical json data in to tabular format
+                    levels = list(range(lob_depth))
+                    for row in raw_data_frame.itertuples():
 
-                    ask_price, ask_volume = zip(* row.asks[0:lob_depth])
-                    bid_price, bid_volume = zip(* row.bids[0:lob_depth])
-                    sequences = [row.seq] * lob_depth
-                    datetimes = [row.Index] * lob_depth
+                        ask_price, ask_volume = zip(* row.asks[0:lob_depth])
+                        bid_price, bid_volume = zip(* row.bids[0:lob_depth])
+                        sequences = [row.seq] * lob_depth
+                        datetimes = [row.Index] * lob_depth
 
-                    processed_data.append(list(zip(
-                        ask_price,
-                        ask_volume,
-                        bid_price,
-                        bid_volume,
-                        levels,
-                        sequences,
-                        datetimes
-                    )))
+                        processed_data.append(list(zip(
+                            ask_price,
+                            ask_volume,
+                            bid_price,
+                            bid_volume,
+                            levels,
+                            sequences,
+                            datetimes
+                        )))
 
-                # unravel nested structure and force data types
-                day_data = pd.DataFrame([y for x in processed_data for y in x], #flatten the list of lists structure
-                                columns = ['Ask_Price', 'Ask_Size', 'Bid_Price', 'Bid_Size','Level', 'Sequence','Datetime'])
+                    # unravel nested structure and force data types
+                    day_data = pd.DataFrame([y for x in processed_data for y in x], #flatten the list of lists structure
+                                    columns = ['Ask_Price', 'Ask_Size', 'Bid_Price', 'Bid_Size','Level', 'Sequence','Datetime'])
 
-                day_data['Ask_Price'] = day_data['Ask_Price'].astype('float64')
-                day_data['Bid_Price'] = day_data['Bid_Price'].astype('float64')
-                day_data['Sequence'] = day_data['Sequence'].astype('int64')
-                day_data.sort_values(by=['Datetime', 'Level'], inplace=True)
-                day_data.to_parquet(original_file_name)
+                    day_data['Ask_Price'] = day_data['Ask_Price'].astype('float64')
+                    day_data['Bid_Price'] = day_data['Bid_Price'].astype('float64')
+                    day_data['Sequence'] = day_data['Sequence'].astype('int64')
+                    day_data.sort_values(by=['Datetime', 'Level'], inplace=True)
+                    day_data.to_parquet(original_file_name)
+
+                else:
+                    # if no cached file is present and s3 download is not enabled - skip
+                    print(f'No file found, s3 download set to False, skipping {date_to_process}')
+                    date_to_process += timedelta(days=1) # the most nested folder is a day of the month 
+                    continue
 
             # create additional features useful for resampling
             day_data['Mid_Price'] = (day_data['Ask_Price'] + day_data['Bid_Price']) / 2

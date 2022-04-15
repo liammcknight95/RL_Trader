@@ -245,7 +245,8 @@ def get_minute_by_minute_cache(session_id, pair, start_date, end_date):
             end_date, 
             include_trades=False, 
             frequency=timedelta(seconds=60), 
-            depth=100
+            depth=100,
+            s3_download=False
         )
         return df_data.reset_index().to_dict('records')
     return pd.DataFrame(query_and_serialize_data(session_id, pair, start_date, end_date))
