@@ -379,12 +379,12 @@ class TradingStrategy():
 
         self._get_strat_gross_returns() # get strategy returns time series
         self._calculate_strat_metrics() # calculate strategy perfomance looking at individual trades
-        print(self.df)
+        # print(self.df)
 
     def trading_chart(self, plot_strategy=False, plot_volatility=False):#, indicators_params={}):
 
         indicator_names = self.indicator_names
-        print(indicator_names, self.df.columns)
+        # print(indicator_names, self.df.columns)
         plot_indic_color = ['#CCFFFF', '#FFCCFF', '#536868']
 
         fig = make_subplots(
@@ -426,7 +426,7 @@ class TradingStrategy():
         # add indicators to candlestick chart
         if len(indicator_names) > 0:
             for indic, color in zip (indicator_names, plot_indic_color):
-                print(indic)
+                # print(indic)
                 # indicators requiring sec axis
                 if 'rsi' in indic: sec_y=True
                 else: sec_y=False

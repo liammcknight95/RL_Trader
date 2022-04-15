@@ -9,6 +9,9 @@ import numpy as np
 import pandas as pd
 import time, os, sys, shutil, glob
 from datetime import datetime, timedelta
+import uuid
+from flask_caching import Cache
+import logging
 
 # my modules
 from configuration import config
@@ -17,10 +20,26 @@ import chart_viz_charting
 from chart_viz_downloading_layout import downloading_page_layout
 import chart_viz_downloading
 import data_preprocessing as dp
+from StratTest.engine import TradingStrategy
 
 import multiprocessing as mp
 import tqdm
 # from p_tqdm import p_map
+from decorators.log_exceptions import exception_handler 
+
+# main info logger
+log_main = logging.getLogger('app_viz_logger') 
+log_main.setLevel(logging.DEBUG)    
+log_format = logging.Formatter('[%(asctime)s] [%(levelname)s] - %(message)s')
+
+# writing to file                                                     
+file_handler = logging.FileHandler("./logs/app_viz_info.log")                             
+file_handler.setLevel(logging.DEBUG)                                        
+file_handler.setFormatter(log_format)                          
+log_main.addHandler(file_handler)  
+
+# exception handler decorator
+logged = exception_handler('chart_viz_app: {func.__name__}')
 
 cache = diskcache.Cache('./cache')
 lcm = DiskcacheLongCallbackManager(cache)
@@ -45,13 +64,32 @@ navbar = dbc.Navbar(
 
 app = dash.Dash(long_callback_manager=lcm, external_stylesheets=[dbc.themes.DARKLY], suppress_callback_exceptions=True)
 app.title = "RL Trader"
+
+# handle caching
+session_id = str(uuid.uuid4())
+cache = Cache(app.server, config={
+    # 'CACHE_TYPE': 'redis',
+    # 'CACHE_REDIS_URL': os.environ.get('REDIS_URL', 'localhost:6379'),
+
+    # Alternatively, save on the filesystem with the following config:
+    # Note that filesystem cache doesn't work on systems with ephemeral
+    # filesystems like Heroku.
+    'CACHE_TYPE': 'filesystem',
+    'CACHE_DIR': './caches',
+    # should be equal to maximum number of users on the app at a single time
+    # higher numbers will store more data in the filesystem / redis cache
+    'CACHE_THRESHOLD': 3
+})
+
+
 app.layout = dbc.Container([
     navbar,
     dcc.Location(id='url', refresh=False),
-    html.Div(id='page-content')
+    html.Div(id='page-content'),
+    html.Div(session_id, id='session-id', style={'display': 'none'}),
 ], className="h-100", fluid=True, style={'padding':'0px'})
 
-
+@logged
 @callback(Output('page-content', 'children'),
               Input('url', 'pathname'))
 def display_page(pathname):
@@ -196,6 +234,84 @@ def delete_partial_days(dwnld_df, pair, min_redown_file):
 ## update chart at the end
 ## add progress bar
 ## check if multiprocessing is possible for this
+
+
+def get_minute_by_minute_cache(session_id, pair, start_date, end_date):
+    @cache.memoize()
+    def query_and_serialize_data(session_id, pair, start_date, end_date):
+        df_data = dp.import_data(
+            pair, 
+            start_date, 
+            end_date, 
+            include_trades=False, 
+            frequency=timedelta(seconds=60), 
+            depth=100
+        )
+        return df_data.reset_index().to_dict('records')
+    return pd.DataFrame(query_and_serialize_data(session_id, pair, start_date, end_date))
+
+
+
+@callback(
+    Output("chart-data-store-ref", "children"),
+    Input("currency-variable", "value"),
+    Input("chart-date-picker-range", "start_date"),
+    Input("chart-date-picker-range", "end_date")
+)
+@logged
+def trigger_new_cache(pair, start_date, end_date):
+    ''' Placeholder to trigger new minute by minute data load '''
+    log_main.info(f'{session_id} new chart data store generated: {pair}, {start_date} | {end_date}')
+    return f'{pair}|{start_date}|{end_date}'
+
+
+
+@callback(
+    Output("strategy-graph", "figure"),
+    Input("chart-data-store-ref", "children"),
+    Input("strategy-input", "value"),
+    Input("data-frequency-variable", "value"),
+    Input("strategy-transaction-cost", "value"),
+    Input("strategy-stop-loss", "value"),
+    Input("strategy-param-1", "value"),
+    Input("strategy-param-2", "value"),
+    State("session-id", "children"),
+    prevent_initial_call=True
+)
+@logged
+def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, param1, param2, session_id):
+    # if cached_data is None:
+    #     raise PreventUpdate
+    # load cached data
+    print("##### triggering this BLOCK")
+    pair, start_date, end_date = store_ref.split('|')
+    data = get_minute_by_minute_cache(session_id, pair, start_date, end_date)
+    # print(data)
+    data['Datetime'] = pd.to_datetime(data['Datetime'])
+    data = data.set_index('Datetime')
+    # print(data.iloc[1])
+    # convert frequency from timedelta to seconds
+    resample_freq = pd.to_timedelta(frequency)
+
+    trading_strategy = TradingStrategy(data, frequency=resample_freq)
+    trading_strategy.add_strategy(
+        strategy, 
+        execution_type='current_bar_close',#'next_bar_open', 'current_bar_close, 'cheat_previous_close
+        stop_loss_bps=stop_loss,
+        comms_bps=transaction_cost,
+        indicators_params=dict(    
+            # short_ema=short_ema,
+            # long_ema=long_ema
+            window=param1, 
+            window_dev=param2
+    ), # abstract parameter name
+    print_trades=False
+)
+    # print(trading_strategy.df)
+
+    fig = trading_strategy.trading_chart(plot_strategy=True)
+    return fig
+
 
 if __name__ == "__main__":
     app.run_server(debug=True, port=8888)

@@ -274,7 +274,7 @@ charting_page_layout = dbc.Container(
         html.Br(),
         dbc.Row(
             [
-                dcc.Store(id="chart-data-session", storage_type="memory"),
+                html.Div(id="chart-data-store-ref", style={'display': 'none'}),
                 dbc.Col(controls, width=2),
                 dbc.Col(
                     dbc.Card(
