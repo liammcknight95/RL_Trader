@@ -1,10 +1,12 @@
 # from tracemalloc import start
+from __future__ import annotations
 import dash
 from dash import Input, Output, State, callback, dcc, html
 import dash_bootstrap_components as dbc
 from dash.long_callback import DiskcacheLongCallbackManager
+from dash.exceptions import PreventUpdate
 import diskcache
-
+import plotly.graph_objects as go
 import numpy as np
 import pandas as pd
 import time, os, sys, shutil, glob
@@ -12,6 +14,8 @@ from datetime import datetime, timedelta
 import uuid
 from flask_caching import Cache
 import logging
+
+from torch import preserve_format
 
 # my modules
 from configuration import config
@@ -111,11 +115,13 @@ def display_page(pathname):
         State("download-min-files-redownload", "value"),
         State("download-existing-file-data", "data"),
         State("resample-existing-file-data", "data")),
-    running=[(Output("download-start-button", "disabled"), True, False)],
+    running=[(Output("download-start-button", "disabled"), True, False),
+        (Output("download-start-button", "children"), "Download in Progress", "Download") 
+    ],
     prevent_initial_call=True
 )
 def download_missing_files(dwnld_click, pairs, freqs, start_date, end_date, numb_processors, min_redown_file, dwnld_data, rsmpl_data):
-
+    print(f'### in long allback {dwnld_click}')
     if dwnld_click > 0:
 
         all_days_in_range = pd.date_range(start_date, end_date, freq='1D').astype('str').tolist()
@@ -125,14 +131,14 @@ def download_missing_files(dwnld_click, pairs, freqs, start_date, end_date, numb
         all_inputs = get_day_pair_inputs(dwnld_df, rsmpld_df, pairs, freqs, all_days_in_range, min_redown_file)
         print(f'Executing the following download jobs: {all_inputs} \nOn {numb_processors} different processors')
 
-        # for bar progress tqdm
-        std_err_backup = sys.stderr
-        file_prog = open('progress.txt', 'w')
-        sys.stderr = file_prog
+        # for bar progress
+        # size_of_step
+        # std_err_backup = sys.stderr
+        # file_prog = open('progress.txt', 'w')
+        # sys.stderr = file_prog
 
         with mp.Pool(processes=numb_processors) as pool:
             results = pool.starmap(dp.get_lob_data, all_inputs)
-
         # temp_input_df = pd.DataFrame(all_inputs, columns=['pair', 'date_start', 'date_end', 'resampling_frequency'])
         # results = p_map(dp.get_lob_data,
         #     temp_input_df['pair'].tolist(), 
@@ -142,12 +148,12 @@ def download_missing_files(dwnld_click, pairs, freqs, start_date, end_date, numb
         #     **{"num_cpus": numb_processors}
         # )
 
-        file_prog.close()
-        sys.stderr = std_err_backup
+        # file_prog.close()
+        # sys.stderr = std_err_backup
 
         return f"Download terminated for {len(all_inputs)} files using {numb_processors} processors clicks:{dwnld_click}"
     else:
-        return "Waiting for a btn click"
+        return "Click the button below to start the download"
 
 
 def get_day_pair_inputs(dwnld_df, rsmpld_df, pairs, freqs, all_days_in_range, min_redown_file):
@@ -235,7 +241,6 @@ def delete_partial_days(dwnld_df, pair, min_redown_file):
 ## add progress bar
 ## check if multiprocessing is possible for this
 
-
 def get_minute_by_minute_cache(session_id, pair, start_date, end_date):
     @cache.memoize()
     def query_and_serialize_data(session_id, pair, start_date, end_date):
@@ -281,38 +286,57 @@ def trigger_new_cache(pair, start_date, end_date):
 )
 @logged
 def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, param1, param2, session_id):
+
     # if cached_data is None:
     #     raise PreventUpdate
     # load cached data
     print("##### triggering this BLOCK")
     pair, start_date, end_date = store_ref.split('|')
     data = get_minute_by_minute_cache(session_id, pair, start_date, end_date)
-    # print(data)
-    data['Datetime'] = pd.to_datetime(data['Datetime'])
-    data = data.set_index('Datetime')
-    # print(data.iloc[1])
-    # convert frequency from timedelta to seconds
-    resample_freq = pd.to_timedelta(frequency)
+    if data.shape[0]>0:
+        # print(data)
+        data['Datetime'] = pd.to_datetime(data['Datetime'])
+        data = data.set_index('Datetime')
+        # print(data.iloc[1])
+        # convert frequency from timedelta to seconds
+        resample_freq = pd.to_timedelta(frequency)
 
-    trading_strategy = TradingStrategy(data, frequency=resample_freq)
-    trading_strategy.add_strategy(
-        strategy, 
-        execution_type='current_bar_close',#'next_bar_open', 'current_bar_close, 'cheat_previous_close
-        stop_loss_bps=stop_loss,
-        comms_bps=transaction_cost,
-        indicators_params=dict(    
-            # short_ema=short_ema,
-            # long_ema=long_ema
-            window=param1, 
-            window_dev=param2
-    ), # abstract parameter name
-    print_trades=False
-)
-    # print(trading_strategy.df)
+        trading_strategy = TradingStrategy(data, frequency=resample_freq)
+        trading_strategy.add_strategy(
+            strategy, 
+            execution_type='current_bar_close',#'next_bar_open', 'current_bar_close, 'cheat_previous_close
+            stop_loss_bps=stop_loss,
+            comms_bps=transaction_cost,
+            indicators_params=dict(    
+                # short_ema=short_ema,
+                # long_ema=long_ema
+                window=param1, 
+                window_dev=param2
+        ), # abstract parameter name
+        print_trades=False
+    )
+        # print(trading_strategy.df)
 
-    fig = trading_strategy.trading_chart(plot_strategy=True)
-    return fig
-
+        fig = trading_strategy.trading_chart(plot_strategy=True)
+        return fig
+    else:
+        return {
+            'layout': go.Layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            height=770,
+            annotations=[{
+                        "text": "No matching data found",
+                        "xref": "paper",
+                        "yref": "paper",
+                        "showarrow": False,
+                        "font": {
+                            "size": 28,
+                            "color":"white"
+                        }
+                    }]
+            )
+        }
 
 if __name__ == "__main__":
     app.run_server(debug=True, port=8888)

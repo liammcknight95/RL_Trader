@@ -137,7 +137,9 @@ def import_data(pair, date_start, date_end, s3_download=True, include_trades=Tru
     # import px
     results_px = get_lob_data(pair, date_start, date_end, frequency, depth, s3_download=s3_download)
     # print(results_px)
-    assert len(results_px)>0, 'No data to process'
+    # assert len(results_px)>0, 'No data to process'
+    if len(results_px)==0:
+        return pd.DataFrame([])
     df_px = dd.read_parquet(results_px, engine='pyarrow').compute()
     print('px data shape:', df_px.shape)
     if include_trades:

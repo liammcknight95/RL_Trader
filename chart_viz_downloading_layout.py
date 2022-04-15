@@ -128,18 +128,32 @@ controls = dbc.Card(
                 dbc.Col(
                     [
                         html.P(
-                            'Waiting for something to happen', 
+                            'Click the button below to start the download', 
                             id='download-output-text',
                             # style={'marginTop':'20px'}
                         ),
-                        dbc.Progress(
-                            id='download-pbar',
-                            style={'margin-top': 15}
-                        ),
-                        dcc.Interval(
-                            id='download-timer_progress',
-                            interval=2000
-                        ),
+
+                        dbc.Button(
+                            [
+                                # dbc.Spinner(
+                                #     id='download-spinner', 
+                                #     color='primary', 
+                                #     size='sm'
+                                #     ), 
+                                ' Download'
+                            ], 
+                            id='download-start-button', 
+                            n_clicks=0,
+                            style={'marginTop':'10px'}
+                        )
+                        # dbc.Progress(
+                        #     id='download-pbar',
+                        #     style={'margin-top': 15}
+                        # ),
+                        # dcc.Interval(
+                        #     id='download-timer_progress',
+                        #     interval=2000
+                        # ),
                     ],
                     width=6
                 ),
@@ -148,26 +162,26 @@ controls = dbc.Card(
         ),
 
         html.Br(),
-        html.Br(),
+        # html.Br(),
 
-        dbc.Row(
-            [
+        # dbc.Row(
+        #     [
 
-                dbc.Col(
-                    [
-                        dbc.Button(
-                            'Start Download', 
-                            id='download-start-button', 
-                            n_clicks=0,
-                            style={'marginTop':'38px'}
-                        )
-                    ],
-                    width=6
-                ),
+        #         dbc.Col(
+        #             [
+        #                 dbc.Button(
+        #                     [dbc.Spinner(id='download-spinner', size='sm'), ' Download'], 
+        #                     id='download-start-button', 
+        #                     n_clicks=0,
+        #                     style={'marginTop':'38px'}
+        #                 )
+        #             ],
+        #             width=6
+        #         ),
 
-            ],
-            justify='start'
-        ),
+        #     ],
+        #     justify='start'
+        # ),
 
     ],
     style={'minHeight':'400px', 'maxHeight':'90vh', 'height':'90vh'},
