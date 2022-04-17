@@ -19,6 +19,7 @@ from torch import preserve_format
 
 # my modules
 from configuration import config
+from chart_viz_config import strategies
 from chart_viz_charting_layout import charting_page_layout
 import chart_viz_charting
 from chart_viz_downloading_layout import downloading_page_layout
@@ -307,12 +308,10 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
             execution_type='current_bar_close',#'next_bar_open', 'current_bar_close, 'cheat_previous_close
             stop_loss_bps=stop_loss,
             comms_bps=transaction_cost,
-            indicators_params=dict(    
-                # short_ema=short_ema,
-                # long_ema=long_ema
-                window=param1, 
-                window_dev=param2
-        ), # abstract parameter name
+            indicators_params={
+                strategies[strategy]['ids'][0]:param1,
+                strategies[strategy]['ids'][1]:param2,
+            },
         print_trades=False
     )
         # print(trading_strategy.df)

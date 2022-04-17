@@ -17,7 +17,8 @@ def dynamic_strategy_controls(strategy):
                             type="number", 
                             min=strategies[strategy]['short_ema'].min(), 
                             max=strategies[strategy]['short_ema'].max(), 
-                            value=15
+                            value=15,
+                            persistence=True
                         ),
                         ]
                     )
@@ -34,7 +35,8 @@ def dynamic_strategy_controls(strategy):
                             type="number", 
                             min=strategies[strategy]['long_ema'].min(), 
                             max=strategies[strategy]['long_ema'].max(), 
-                            value=30
+                            value=30,
+                            persistence=True
                         ),
                         ]
                     )
@@ -54,7 +56,8 @@ def dynamic_strategy_controls(strategy):
                             type="number", 
                             min=strategies[strategy]['window'].min(), 
                             max=strategies[strategy]['window'].max(), 
-                            value=15
+                            value=15,
+                            persistence=True
                         ),
                         ]
                     )
@@ -71,7 +74,8 @@ def dynamic_strategy_controls(strategy):
                             type="number", 
                             min=strategies[strategy]['window_dev'].min(), 
                             max=strategies[strategy]['window_dev'].max(), 
-                            value=1
+                            value=1,
+                            persistence=True
                         ),
                         ]
                     )
@@ -92,7 +96,8 @@ def dynamic_strategy_controls(strategy):
                             type="number", 
                             min=strategies[strategy]['short_ema'].min(), 
                             max=strategies[strategy]['short_ema'].max(), 
-                            value=15
+                            value=15,
+                            persistence=True
                         ),
                         ]
                     )
@@ -110,7 +115,8 @@ def dynamic_strategy_controls(strategy):
                             type="number", 
                             min=strategies[strategy]['long_ema'].min(), 
                             max=strategies[strategy]['long_ema'].max(), 
-                            value=30
+                            value=30,
+                            persistence=True
                         ),
                         ]
                     )
@@ -127,6 +133,7 @@ def dynamic_strategy_controls(strategy):
                         [
                         dbc.Input(
                             id="strategy-param-1",
+                            persistence=True
                         ),
                         ]
                     )
@@ -139,7 +146,8 @@ def dynamic_strategy_controls(strategy):
                     dbc.Col(
                         [
                         dbc.Input(
-                            id="strategy-param-2", 
+                            id="strategy-param-2",
+                            persistence=True
                         ),
                         ]
                     )
@@ -235,7 +243,8 @@ controls = dbc.Card(
                             type="number", 
                             min=0, 
                             max=100, 
-                            value=25
+                            value=25,
+                            persistence=True
                     ),
                     ],
                 ),
@@ -252,7 +261,8 @@ controls = dbc.Card(
                             type="number", 
                             min=0, 
                             max=10000, 
-                            value=0
+                            value=0,
+                            persistence=True
                     ),
                     ],
                 ),  
