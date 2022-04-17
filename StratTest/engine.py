@@ -199,10 +199,23 @@ class TradingStrategy():
         self.trades_df['trades_pctg_return'] = np.exp(self.trades_df['trades_log_return']) - 1
         self.trades_df['cum_trades_pctg_return'] = np.exp(self.trades_df['cum_trades_log_return']) - 1
 
+        # net return
         try:
-            self.cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
+            self.stats_cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
         except:
-            self.cum_return = f"{np.nan}"
+            self.stats_cum_return = f"{np.nan}"
+
+        # number of trades
+        self.stats_number_trades = self.trades_df.shape[0]
+
+        # net return per trade
+        self.stats_avg_return = self.trades_df['trades_pctg_return'].mean()
+
+        # best win
+        self.stats_best_trade = self.trades_df['trades_pctg_return'].max()
+
+        # worst loss
+        self.stats_worst_trade = self.trades_df['trades_pctg_return'].min()
 
 
     def _add_stop_loss(self):
