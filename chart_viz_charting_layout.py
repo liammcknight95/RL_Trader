@@ -29,7 +29,7 @@ def dynamic_strategy_controls(strategy):
                 [
                     dbc.Col(
                         [
-                        dbc.Label("Short EMA"),
+                        dbc.Label("Long EMA"),
                         dbc.Input(
                             id="strategy-param-2", 
                             type="number", 
@@ -109,7 +109,7 @@ def dynamic_strategy_controls(strategy):
                 [
                     dbc.Col(
                         [
-                        dbc.Label("Short EMA"),
+                        dbc.Label("Long EMA"),
                         dbc.Input(
                             id="strategy-param-2", 
                             type="number", 
@@ -279,6 +279,63 @@ controls = dbc.Card(
     body=True,
 )
 
+
+strategy_stats = dbc.Row(
+    [
+        dbc.Col(
+            dbc.Card(
+                [
+                    dbc.Label("Gross Return"),
+                ]
+            ),
+            width=2
+        ),
+        dbc.Col(
+            dbc.Card(
+                [
+                    dbc.Label("Net Return"),
+                ]
+            ),
+            width=2
+        ),
+        dbc.Col(
+            dbc.Card(
+                [
+                    dbc.Label("Trades Number"),
+                ]
+            ),
+            width=2
+        ),
+        dbc.Col(
+            dbc.Card(
+                [
+                    dbc.Label("Sharpe Ratio"),
+                ]
+            ),
+            width=2
+        ),
+        dbc.Col(
+            dbc.Card(
+                [
+                    dcc.Graph(
+                        id="strategy-single-trades",
+                        figure={
+                            'layout': go.Layout(
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(gridcolor='#444'),
+                            yaxis=dict(gridcolor='#444'),
+                            height=130
+                            )
+                        }
+                    ),
+                ]
+            ),
+            width=4
+        ),
+    ]
+)
+
 charting_page_layout = dbc.Container(
     [
         html.Br(),
@@ -287,21 +344,27 @@ charting_page_layout = dbc.Container(
                 html.Div(id="chart-data-store-ref", style={'display': 'none'}),
                 dbc.Col(controls, width=2),
                 dbc.Col(
-                    dbc.Card(
-                        dcc.Graph(
-                            id="strategy-graph",
-                            figure={
-                                'layout': go.Layout(
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                height=770
-                                )
-                            }
+                    [
+                        strategy_stats,
+                        html.Br(),
+                        dbc.Card(
+                            dcc.Graph(
+                                id="strategy-graph",
+                                figure={
+                                    'layout': go.Layout(
+                                    paper_bgcolor='rgba(0,0,0,0)',
+                                    plot_bgcolor='rgba(0,0,0,0)',
+                                    xaxis=dict(gridcolor='#444'),
+                                    yaxis=dict(gridcolor='#444'),
+                                    height=770
+                                    )
+                                }
+                            ),
+                            style={'minHeight':'800px', 'height':'100%'},
+                            body=True,
+                            
                         ),
-                        style={'minHeight':'800px', 'height':'100%'},
-                        body=True,
-                        
-                    ),
+                    ],
                     md=10,
                 ),
             ],

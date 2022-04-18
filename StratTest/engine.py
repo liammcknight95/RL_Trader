@@ -654,8 +654,10 @@ class TradingStrategy():
             title_x=.5,
             # yaxis_title='USDT/BTC',
             template="plotly_dark",
-            # plot_bgcolor='rgba(0,0,0,0)',
-            # paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(gridcolor='#444'),
+            yaxis=dict(gridcolor='#444')
         )
 
 

@@ -199,6 +199,8 @@ data_overview = dbc.Card(
                             'layout': go.Layout(
                             paper_bgcolor='rgba(0,0,0,0)',
                             plot_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(gridcolor='#444'),
+                            yaxis=dict(gridcolor='#444')
                             )
                         },
                         style={'height':'30vh'}
@@ -215,6 +217,8 @@ data_overview = dbc.Card(
                             'layout': go.Layout(
                             paper_bgcolor='rgba(0,0,0,0)',
                             plot_bgcolor='rgba(0,0,0,0)',
+                            xaxis=dict(gridcolor='#444'),
+                            yaxis=dict(gridcolor='#444')
                             )
                         },
                         style={'height':'30vh'}
@@ -231,7 +235,8 @@ data_overview = dbc.Card(
                             'layout': go.Layout(
                             paper_bgcolor='rgba(0,0,0,0)',
                             plot_bgcolor='rgba(0,0,0,0)',
-                            # height=600
+                            xaxis=dict(gridcolor='#444'),
+                            yaxis=dict(gridcolor='#444')
                             )
                         },
                         style={'height':'30vh'}
