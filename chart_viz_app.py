@@ -275,6 +275,11 @@ def trigger_new_cache(pair, start_date, end_date):
 
 @callback(
     Output("strategy-graph", "figure"),
+    Output("strategy-gross-return-stat", "children"),
+    Output("strategy-net-return-stat", "children"),
+    Output("strategy-trades-number-stat", "children"),
+    Output("strategy-sharpe-ratio-stat", "children"),
+    Output("strategy-single-trades", "figure"),
     Input("chart-data-store-ref", "children"),
     Input("strategy-input", "value"),
     Input("data-frequency-variable", "value"),
@@ -316,10 +321,17 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
     )
         # print(trading_strategy.df)
 
-        fig = trading_strategy.trading_chart(plot_strategy=True)
-        return fig
+        fig_strategy = trading_strategy.trading_chart(plot_strategy=True)
+
+        gross_return = f"{trading_strategy.cum_gross_return:.2%}"
+        net_return = f"{trading_strategy.stats_cum_net_return:.2%}"
+        trades_number = f"{trading_strategy.trades_df.shape[0]}"
+        sharpe_ratio = f"{trading_strategy.max_drawdown:.2%}"
+
+        fig_trades = trading_strategy.stats_plot()
+
     else:
-        return {
+        fig_strategy = {
             'layout': go.Layout(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
@@ -336,6 +348,20 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
                     }]
             )
         }
+
+        gross_return = "N/A"
+        net_return = "N/A"
+        trades_number = "N/A"
+        sharpe_ratio = "N/A"
+
+        fig_trades = {
+            'layout': go.Layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+            )
+        }
+
+    return fig_strategy, gross_return, net_return, trades_number, sharpe_ratio, fig_trades
 
 if __name__ == "__main__":
     app.run_server(debug=True, port=8888)

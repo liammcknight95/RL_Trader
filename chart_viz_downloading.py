@@ -63,7 +63,9 @@ def chart_downloads(pairs, start_date, end_date, finished_dwnld):
         ],
         title_font_family='sans-serif',
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(gridcolor='#444'),
+        yaxis=dict(gridcolor='#444')
     )
     return fig, dwnld_df_filt.to_dict('records')
 
@@ -123,7 +125,9 @@ def chart_resampled(pairs, start_date, end_date, frequency, finished_dwnld):
         xaxis_ticks='outside',
         title_font_family='sans-serif',
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(gridcolor='#444'),
+        yaxis=dict(gridcolor='#444')
     )
     return fig, resampled_files_df_filt.to_dict('records')
 

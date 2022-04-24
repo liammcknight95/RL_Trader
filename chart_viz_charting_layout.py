@@ -275,8 +275,9 @@ controls = dbc.Card(
             id="strategy-parameter-elements"
         ),
     ],
-    style={'minHeight':'800px', 'height':'100%'},
+    # style={'minHeight':'800px', 'height':'100%'},
     body=True,
+    className='hv-75'
 )
 
 
@@ -286,7 +287,12 @@ strategy_stats = dbc.Row(
             dbc.Card(
                 [
                     dbc.Label("Gross Return"),
-                ]
+                    html.P(
+                        id='strategy-gross-return-stat', 
+                    )
+                ],
+                className='h-100 text-center stats-styling',
+                body=True
             ),
             width=2
         ),
@@ -294,7 +300,10 @@ strategy_stats = dbc.Row(
             dbc.Card(
                 [
                     dbc.Label("Net Return"),
-                ]
+                    html.P(id='strategy-net-return-stat')
+                ],
+                className='h-100 text-center stats-styling',
+                body=True
             ),
             width=2
         ),
@@ -302,21 +311,28 @@ strategy_stats = dbc.Row(
             dbc.Card(
                 [
                     dbc.Label("Trades Number"),
-                ]
+                    html.P(id='strategy-trades-number-stat')
+                ],
+                className='h-100 text-center stats-styling',
+                body=True
             ),
             width=2
         ),
         dbc.Col(
             dbc.Card(
                 [
-                    dbc.Label("Sharpe Ratio"),
-                ]
+                    dbc.Label("Max Drawdown"),
+                    html.P(id='strategy-sharpe-ratio-stat')
+                ],
+                className='h-100 text-center stats-styling',
+                body=True
             ),
             width=2
         ),
         dbc.Col(
             dbc.Card(
                 [
+                    dbc.Label("Net Returns by Trade Lenght"),
                     dcc.Graph(
                         id="strategy-single-trades",
                         figure={
@@ -325,15 +341,20 @@ strategy_stats = dbc.Row(
                             plot_bgcolor='rgba(0,0,0,0)',
                             xaxis=dict(gridcolor='#444'),
                             yaxis=dict(gridcolor='#444'),
-                            height=130
+                            height=80
                             )
+                        },
+                        config={
+                            'displayModeBar': False
                         }
                     ),
-                ]
+                ],
+                className='h-100 text-center stats-styling',
+                body=True
             ),
             width=4
         ),
-    ]
+    ],
 )
 
 charting_page_layout = dbc.Container(
@@ -356,13 +377,13 @@ charting_page_layout = dbc.Container(
                                     plot_bgcolor='rgba(0,0,0,0)',
                                     xaxis=dict(gridcolor='#444'),
                                     yaxis=dict(gridcolor='#444'),
-                                    height=770
+                                    height=650
                                     )
                                 }
                             ),
-                            style={'minHeight':'800px', 'height':'100%'},
+                            style={'minHeight':'650px', 'height':'100%'},#, 'height':'70%'
                             body=True,
-                            
+                            className='h-75'
                         ),
                     ],
                     md=10,

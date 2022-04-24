@@ -6,6 +6,7 @@ from ta.momentum import RSIIndicator
 import numpy as np
 import pandas as pd
 
+import plotly_express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -199,16 +200,25 @@ class TradingStrategy():
         self.trades_df['trades_pctg_return'] = np.exp(self.trades_df['trades_log_return']) - 1
         self.trades_df['cum_trades_pctg_return'] = np.exp(self.trades_df['cum_trades_log_return']) - 1
 
+        # gross return - from quotes df - last trade is open hence NA
+        self.cum_gross_return = self.df[f'{self.strategy}_gross_cum_pctg_returns'].dropna()[-1]
+
+        # max drawdown - from quotes df - calculated on gross returns - TODO check if needs to be done on net
+        cum_log_returns = self.df[f'{self.strategy}_gross_cum_pctg_returns']
+        highwatermarks = cum_log_returns.cummax()
+        self.drawdowns = (1 + highwatermarks)/(1 + cum_log_returns) - 1
+        self.max_drawdown = self.drawdowns.max()
+
         # net return
         try:
-            self.stats_cum_return = f"{self.trades_df['cum_trades_pctg_return'][-1]:.2%}"
+            self.stats_cum_net_return = self.trades_df['cum_trades_pctg_return'][-1]
         except:
-            self.stats_cum_return = f"{np.nan}"
+            self.stats_cum_net_return = np.nan
 
         # number of trades
         self.stats_number_trades = self.trades_df.shape[0]
 
-        # net return per trade
+        # average net return
         self.stats_avg_return = self.trades_df['trades_pctg_return'].mean()
 
         # best win
@@ -656,11 +666,35 @@ class TradingStrategy():
             template="plotly_dark",
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(gridcolor='#444'),
-            yaxis=dict(gridcolor='#444')
+            xaxis=dict(zerolinecolor='#444', gridcolor='#444'),
+            yaxis=dict(zerolinecolor='#444', gridcolor='#444')
         )
 
 
+
+        return fig
+
+    def stats_plot(self):
+        fig = px.scatter(
+            self.trades_df, 
+            x="trade_len", 
+            y="trades_pctg_return", 
+            # marginal_x="rug", 
+            marginal_y="histogram"
+        )
+
+        fig.update_layout(
+            # title=f'<b>Net Returns Trade Lenght',
+            # title_x=.5,
+            margin=dict(l=0, r=0, t=0, b=25),
+            # padding=dict(l=0, r=0, t=0, b=0),
+            template="plotly_dark",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(zerolinecolor='#444', gridcolor='#444', title=""),
+            yaxis=dict(zerolinecolor='#444', gridcolor='#444', title=""),
+            height=60
+        )
 
         return fig
 
