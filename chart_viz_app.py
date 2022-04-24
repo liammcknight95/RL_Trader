@@ -312,6 +312,7 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
             strategy, 
             execution_type='current_bar_close',#'next_bar_open', 'current_bar_close, 'cheat_previous_close
             stop_loss_bps=stop_loss,
+            stop_loss_type='dynamic',
             comms_bps=transaction_cost,
             indicators_params={
                 strategies[strategy]['ids'][0]:param1,
@@ -321,12 +322,12 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
     )
         # print(trading_strategy.df)
 
-        fig_strategy = trading_strategy.trading_chart(plot_strategy=True)
+        fig_strategy = trading_strategy.trading_chart(plot_strategy=True, plot_volatility=True)
 
         gross_return = f"{trading_strategy.cum_gross_return:.2%}"
         net_return = f"{trading_strategy.stats_cum_net_return:.2%}"
         trades_number = f"{trading_strategy.trades_df.shape[0]}"
-        sharpe_ratio = f"{trading_strategy.max_drawdown:.2%}"
+        max_drawdown = f"{trading_strategy.max_drawdown:.2%}"
 
         fig_trades = trading_strategy.stats_plot()
 
@@ -352,7 +353,7 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
         gross_return = "N/A"
         net_return = "N/A"
         trades_number = "N/A"
-        sharpe_ratio = "N/A"
+        max_drawdown = "N/A"
 
         fig_trades = {
             'layout': go.Layout(
@@ -361,7 +362,7 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
             )
         }
 
-    return fig_strategy, gross_return, net_return, trades_number, sharpe_ratio, fig_trades
+    return fig_strategy, gross_return, net_return, trades_number, max_drawdown, fig_trades
 
 if __name__ == "__main__":
     app.run_server(debug=True, port=8888)

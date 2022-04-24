@@ -1,3 +1,4 @@
+from pydoc import classname
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 from chart_viz_config import strategies, currencies, frequencies
@@ -275,9 +276,10 @@ controls = dbc.Card(
             id="strategy-parameter-elements"
         ),
     ],
-    # style={'minHeight':'800px', 'height':'100%'},
     body=True,
-    className='hv-75'
+    # style={'overflowY':'scroll'},
+    # style={'minHeight':'92vh', 'maxHeight':'92vh'},
+    className='h-100'
 )
 
 
@@ -355,6 +357,7 @@ strategy_stats = dbc.Row(
             width=4
         ),
     ],
+    # style={'minHeight':'5vh', 'maxHeight':'10vh'}
 )
 
 charting_page_layout = dbc.Container(
@@ -366,29 +369,43 @@ charting_page_layout = dbc.Container(
                 dbc.Col(controls, width=2),
                 dbc.Col(
                     [
-                        strategy_stats,
-                        html.Br(),
-                        dbc.Card(
-                            dcc.Graph(
-                                id="strategy-graph",
-                                figure={
-                                    'layout': go.Layout(
-                                    paper_bgcolor='rgba(0,0,0,0)',
-                                    plot_bgcolor='rgba(0,0,0,0)',
-                                    xaxis=dict(gridcolor='#444'),
-                                    yaxis=dict(gridcolor='#444'),
-                                    height=650
-                                    )
-                                }
-                            ),
-                            style={'minHeight':'650px', 'height':'100%'},#, 'height':'70%'
-                            body=True,
-                            className='h-75'
-                        ),
+                        # dbc.Card(
+                        #     [
+                                strategy_stats,
+                                html.Br(),
+                                dbc.Card(
+                                    dcc.Graph(
+                                        id="strategy-graph",
+                                        figure={
+                                            'layout': go.Layout(
+                                            paper_bgcolor='rgba(0,0,0,0)',
+                                            plot_bgcolor='rgba(0,0,0,0)',
+                                            xaxis=dict(gridcolor='#444'),
+                                            yaxis=dict(gridcolor='#444'),
+                                            height=650
+                                            )
+                                        },
+                                        # style={'height':'100%'},
+                                        # className='h-100'
+                                        
+                                    ),
+                                    # style={ 'minHeight':'75vh', 'height':'75vh', 'maxHeight':'75vh'},#, 'height':'70%'
+                                    body=True,
+                                    className='overflow-scroll'
+                                ),
+                        #     ],
+                        #     style={'minHeight':'90vh', 'backgroundColor':'black'},
+                        #     body=True,
+                        #     # className='opacity-100'
+                        # )
                     ],
+                    
                     md=10,
+                    
                 ),
             ],
+            # style={'minHeight':'90vh'}
+            # align='stretch'
         ),
     ],
     fluid=True,

@@ -53,6 +53,8 @@ class TradingStrategy():
         self.df['volume'] = self.df['amount_buy'] + self.df['amount_sell']
         self.df.index.name = 'datetime'
 
+        self.df['close_daily_volatility'] = self.df['close'].pct_change().rolling(10, min_periods=2).std()*(252**0.5)
+
     def add_indicator(self, indicator, **params):
 
         if indicator == 'BollingerBands':
@@ -231,8 +233,14 @@ class TradingStrategy():
     def _add_stop_loss(self):
         # works well for long only
         self.df['temp_trade_grouper_filled_nans'] = self.df['trade_grouper'].fillna(datetime(2030,1,1))
-        self.df['sl_price'] = self.df.groupby('temp_trade_grouper_filled_nans')['high'].transform(pd.Series.cummax)  * (1-(self.stop_loss_bps/10000)) * self.df[f'{self.strategy}_signal']
-        
+
+        if self.stop_loss_type == 'trailing':
+            self.df['sl_price'] = self.df.groupby('temp_trade_grouper_filled_nans')['high'].transform(pd.Series.cummax)  * (1-(self.stop_loss_bps/10000)) * self.df[f'{self.strategy}_signal']
+        elif self.stop_loss_type == 'dynamic':
+            # volatility based stop loss: adjust bps amount by a function of rolling volatility
+            stop_loss_vol_adj_bps =  self.stop_loss_bps / (1+(self.df['close'].pct_change().rolling(10, min_periods=1).std()*(260**0.5))*4) # *4 TODO analyze this parameter, daily makes sense?
+            self.df['sl_price'] = self.df.groupby('temp_trade_grouper_filled_nans')['high'].transform(pd.Series.cummax)  * (1-(stop_loss_vol_adj_bps/10000)) * self.df[f'{self.strategy}_signal']
+
         self.df['sl_hit'] = (self.df['low'] < self.df['sl_price']) * (self.df['close'] < self.df['open']) * self.df[f'{self.strategy}_signal']
 
         for name, sub_df in self.df.groupby(by='trade_grouper'):
@@ -289,11 +297,12 @@ class TradingStrategy():
         self.df.loc[self.df[f'{self.strategy}_new_position']==0, 'sl_hit'] = 0 # reset where trades where not reactivated - never hit stops
 
 
-    def add_strategy(self, strategy, stop_loss_bps=0, comms_bps=0, execution_type='next_bar_open', print_trades=False, indicators_params={}):
+    def add_strategy(self, strategy, stop_loss_bps=0, stop_loss_type='trailing', comms_bps=0, execution_type='next_bar_open', print_trades=False, indicators_params={}):
 
         self.strategy = strategy
         self.execution_type = execution_type ### self.execution_type
         self.stop_loss_bps = stop_loss_bps
+        self.stop_loss_type = stop_loss_type
         self.comms_bps = comms_bps
         self.print_trades = print_trades
         # transform basis points commission in percentage
@@ -491,16 +500,16 @@ class TradingStrategy():
                     secondary_y=sec_y
                 )
 
-        # if plot_volatility:
-        #     fig.add_scatter(
-        #             x=self.df.index, 
-        #             y=self.df['bar_volatility'], 
-        #             name=indic, 
-        #             marker=dict(color='#6339D9'),
-        #             row=2, 
-        #             col=1,
-        #             secondary_y=True
-        #     )
+        if plot_volatility:
+            fig.add_scatter(
+                    x=self.df.index, 
+                    y=self.df['close_daily_volatility'], 
+                    name='rolling_volatility', 
+                    marker=dict(color='#6339D9'),
+                    row=2, 
+                    col=1,
+                    secondary_y=False
+            )
 
         # add volumes
         # fig.add_scatter(
@@ -650,7 +659,7 @@ class TradingStrategy():
             barmode="relative",
             yaxis1=dict(title="Price chart"),
             yaxis2=dict(title=""),
-            yaxis3=dict(title="Volume"),
+            yaxis3=dict(title="Volatility"),
             yaxis4=dict(title="Trade Net Ret"), 
             yaxis5=dict(title="Position"), 
             yaxis6=dict(title="Return"),
