@@ -24,6 +24,8 @@ from chart_viz_charting_layout import charting_page_layout
 import chart_viz_charting
 from chart_viz_downloading_layout import downloading_page_layout
 import chart_viz_downloading
+from chart_viz_trading_layout import trading_page_layout
+import chart_viz_trading
 import data_preprocessing as dp
 from StratTest.engine import TradingStrategy
 
@@ -54,8 +56,9 @@ navbar = dbc.Navbar(
         [
         dbc.Row(
             [
-                dbc.Col(dbc.NavItem(dbc.NavLink("Charting", href="/charting")), width=3),
-                dbc.Col(dbc.NavItem(dbc.NavLink("Downloading", href="/downloading")), width=3),
+                dbc.Col(dbc.NavItem(dbc.NavLink("Trading", href="/trading", style={'fontWeight':'bold'})), width=3),
+                dbc.Col(dbc.NavItem(dbc.NavLink("Charting", href="/charting", style={'fontWeight':'bold'})), width=3),
+                dbc.Col(dbc.NavItem(dbc.NavLink("Downloading", href="/downloading", style={'fontWeight':'bold'})), width=3),
             ],
             justify='start'
         )
@@ -102,6 +105,8 @@ def display_page(pathname):
         return charting_page_layout
     elif pathname == '/downloading':
         return downloading_page_layout
+    elif pathname == '/trading':
+        return trading_page_layout
     else:
         return 'Nothing to display at this path'
 
