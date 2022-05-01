@@ -94,7 +94,7 @@ new_bot_ui = dbc.Card(
 
         html.Br(),
 
-        html.P("", id="trading-new-bot-message")
+        html.P("", id="trading-amend-bot-message")
 
     ],
     body=True

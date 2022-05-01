@@ -1,13 +1,13 @@
 from dash import Input, Output, State, callback, no_update, callback_context, MATCH, ALL
 from datetime import datetime
-import os, uuid
+import os, signal, uuid
 from subprocess import Popen, call
 from chart_viz_config import bot_script_path
 from chart_viz_trading_layout import new_bot_info
 import json
 
 @callback(
-    Output("trading-new-bot-message", "children"),
+    Output("trading-amend-bot-message", "children"),
     Input("trading-new-bot", "n_clicks"),
     Input({'type': 'trading-bot-btn-kill', 'index': ALL}, "n_clicks"),
     State("trading-ccy-pairs", "value"),
@@ -15,11 +15,14 @@ import json
 )
 def spin_up_new_bot(n_click_new_bot, n_click_kill_bot, pair):
 
-    ctx = callback_context.triggered[0]['prop_id']
+    ctx_id = callback_context.triggered[0]['prop_id']
+    ctx_value = callback_context.triggered[0]['value']
+    print('bot msg', callback_context.triggered)
 
     # if a new bot is being created
-    if ctx.split('.')[0] == 'trading-new-bot':
+    if ctx_id.split('.')[0] == "trading-new-bot":
 
+        # launch the new bot
         script_path = os.path.join(bot_script_path, "run_mock_script.py")
         p = Popen(['python3', script_path])
         new_bot_unique_id = str(uuid.uuid4())
@@ -38,39 +41,45 @@ def spin_up_new_bot(n_click_new_bot, n_click_kill_bot, pair):
 
         message = f"CREATED new {pair[0]} Bot at {datetime.now().isoformat()}. Unique id: {new_bot_unique_id}"
         
-    # if a bot is being deleted
-    else:
-        id_deleted = ctx.split('","type":')[0].split('{"index":"')[-1]
-        print('in killing bot block', id_deleted)
-        # TODO change status of bot from json
-        # with open("run_mock_script_store.json") as f:
-        #     bots = json.load(f)
+    # if a bot is being deleted - ie a btn kill has actually been clicked
+    elif "trading-bot-btn-kill" in ctx_id.split('.')[0] and ctx_value is not None:
         
-        # for bot_id in bots.keys():
-        #     if bots[bot_id][1] == 'active':
-        #         live_bots_ui_children.append(new_bot_info(bot_id))
+        # kill the targeted bot
+        deleted_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
+        print("in killing bot block", deleted_bot_unique_id)
 
-    
-        message = f"DELETED Bot at {datetime.now().isoformat()}. Unique id: {id_deleted}"
+        # load processes log
+        with open("run_mock_script_store.json") as f:
+            data = json.load(f)
+
+        p_id = data[deleted_bot_unique_id][0]
+
+        try:
+            os.kill(int(p_id), signal.SIGKILL)
+            data[deleted_bot_unique_id] = [p_id, 'killed']
+            with open('run_mock_script_store.json', 'w') as f:
+                json.dump(data, f)
+            message = f"DELETED Bot at {datetime.now().isoformat()}. Unique id: {deleted_bot_unique_id}"
+
+        except Exception as e:
+            message = f"TRIED to delete Bot at {datetime.now().isoformat()}. {e}. PID: {p_id}.  Unique id: {deleted_bot_unique_id}"   
+        
+    else:
+        message = 'No action performed'
 
     return message
 
 
 @callback(
     Output("trading-live-bots-list", "children"),
-    Input("trading-new-bot-message", "children"),
-    Input({'type': 'trading-bot-btn-kill', 'index': ALL}, "n_clicks"),
-    State("trading-live-bots-list", "children")
+    Input("trading-amend-bot-message", "children"),
+    State("trading-live-bots-list", "children"),
 )
-def populate_running_bots_list(new_bot_message, n_click_kill, existing_bots_list):
+def populate_running_bots_list(amend_bot_message, existing_bots_list):
 
     # check the callback being triggered
     ctx = callback_context.triggered[0]['prop_id']#.split('.')[0]
     print(ctx)
-    # print(existing_bots_list)
-    # print(type(ctx))
-    # print(callback_context.triggered)
-    # print(callback_context.inputs)
 
     # on app load or page reload
     if ctx.split('.')[0] == '':
@@ -87,15 +96,19 @@ def populate_running_bots_list(new_bot_message, n_click_kill, existing_bots_list
         return live_bots_ui_children
 
     # if new bot has been created:
-    elif ctx.split('.')[0] == 'trading-new-bot-message':
+    elif ctx.split('.')[0] == 'trading-amend-bot-message':
         print('amending blocks')
-        message_words = new_bot_message.split()
+        message_words = amend_bot_message.split()
         ui_action = message_words[0]
         bot_id = message_words[-1] # extract the unique ID from the ui message
+
         if ui_action == 'CREATED':
-            existing_bots_list.append(new_bot_info(bot_id)) # how to get this bot id
+            existing_bots_list.append(new_bot_info(bot_id))
+
         elif ui_action == 'DELETED':
-            # json.loads() existing_bots_list # TODO remove element from here from ui#####
+            print('deleting....')
+            # find string matching unique uuid
+            existing_bots_list = [elem for elem in existing_bots_list if bot_id not in str(elem)]
             ...
         return existing_bots_list
 
