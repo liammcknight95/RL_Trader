@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from StratTest.engine import TradingStrategy
+from StratTest import db_update_tables as db_update
 import pandas as pd
 import ccxt
 import config
@@ -33,6 +34,9 @@ class TradingBot():
         
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
+
+        # create new bot in database
+        db_update.execute_db_commands(db_update.insert_bots_table, (...))
 
 
     def _get_crossover(self, plot=False):
