@@ -55,22 +55,22 @@ def insert_bots_table(fields, config_parameters):
     return sql
 
 
-def insert_order_book_snaps_table(fields, config_parameters):
+def insert_order_book_bars_table(fields, config_parameters):
     sql = """ 
-        INSERT INTO bot_order_book_snaps_tbl(
-            ob_id,
+        INSERT INTO bot_order_book_bars_tbl(
             ob_bot_id,
-            ob_timestamp,
+            ob_record_timestamp,
+            ob_bar_time,
             ob_open,
             ob_high,
             ob_low,
             ob_close,
             ob_action,
-            ob_position,
+            ob_in_position,
             ob_stop_loss_price,
-            ob_strategy_signals
+            ob_strategy_signal
         ) 
-        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,  %s) 
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
@@ -85,17 +85,38 @@ def insert_orders_table(fields, config_parameters):
             order_price_placed,
             order_quantity_placed,
             order_direction,
+            order_exchange_type,
             order_status,
             order_ob_bid_price,
             order_ob_ask_price,
             order_ob_bid_size,
             order_ob_ask_size,
             order_exchange_trade_id,
-            order_timestamp_filled,
-            order_price_filled,
+            order_trades,
             order_quantity_filled
         ) 
         VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
+
+
+def insert_health_status_table(fields, config_parameters):
+    sql = """ 
+        INSERT INTO bot_health_status_tbl(
+            health_status_bot_id,
+            health_status_timestamp,
+            health_status,
+            health_status_error
+        ) 
+        VALUES(%s, %s, %s, %s) 
+    """
+    execute_db_commands(sql, fields, config_parameters)
+    return sql
+
+
+# TODO update existing order:
+# update if partially or totally filled - amount
+# update if cancelled - status
+# json field with update history - {timestamp:reason} - can be used to check validity of orders against order book data
+# check index time

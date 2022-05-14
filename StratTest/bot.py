@@ -18,7 +18,7 @@ class TradingBot():
         ''' 
             pair: str - currency pair the bot is trading
             strategy: str - 
-            frequency
+            frequency: str - ie '30m'
             sl_type: str - type of stop loss, static or trailing
             sl_pctg: float - stop loss as a percentage of order price
             owned_ccy_size: float - amount of owned currency to be traded on a single order
@@ -48,19 +48,20 @@ class TradingBot():
         
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
+        # self._db_new_bot() # add new bot to database
 
 
     def _db_new_bot(self):
         ''' Method that gathers all the information needed to create a new bot in the database '''
 
-        bot_id = str(uuid.uuid4())
+        self.bot_id = 'bot-' + str(uuid.uuid4())
         bot_owned_ccy_end_position = None
         bot_start_date = self.signal_time
         bot_end_date = None
         bot_exchange = 'Bitstamp' # static for now
         
         fields = [
-            bot_id,
+            self.bot_id,
             self.pair,
             self.owned_ccy_size,
             bot_owned_ccy_end_position,
@@ -75,11 +76,101 @@ class TradingBot():
         ]
         # create new database record
         db_update.insert_bots_table(fields, self.db_config_parameters)
-    
+
+
+    def _db_new_order(self, order):
+        order_id = 'order-' + str(uuid.uuid4())
+        order_timestamp_placed = order['datetime']
+        order_price_placed = order['price']
+        order_quantity_placed = order['amount']
+        order_direction = order['side']
+        order_exchange_type = order['type']
+        if order['filled'] == 0:
+            order_status = 'dormant'
+        elif order['filled'] < order['amount']:
+            order_status = 'partialled'
+        else:
+            order_status = 'filled'
+        order_ob_bid_price = self.top_bid_px
+        order_ob_ask_price = self.top_ask_px
+        order_ob_bid_size = self.top_bid_quantity
+        order_ob_ask_size = self.top_ask_px
+        order_exchange_trade_id = order['id']
+        order_trades = order['trades']
+        order_quantity_filled = order['amount'] - order['remaining']
+
+        fields = [
+            order_id,
+            self.bot_id,
+            order_timestamp_placed,
+            order_price_placed,
+            order_quantity_placed,
+            order_direction,
+            order_exchange_type,
+            order_status,
+            order_ob_bid_price,
+            order_ob_ask_price,
+            order_ob_bid_size,
+            order_ob_ask_size,
+            order_exchange_trade_id,
+            order_trades,
+            order_quantity_filled
+        ]
+
+        # create new order database record
+        db_update.insert_orders_table(fields, self.db_config_parameters)
+
+
+    def _db_new_order_book(self, bar):
+        ''' bar: pd.Series containing strategy latest pulled data and indicator '''
+
+        ob_record_timestamp = datetime.now().isoformat()
+        ob_bar_time = bar['timestamp'] # TODO check if this is correct, time need not to be index
+        ob_open = bar['open']
+        ob_high = bar['high']
+        ob_low = bar['low']
+        ob_close = bar['close']
+        ob_action = bar[f'{self.strategy}_trades']
+        ob_in_position = self.in_position
+        ob_stop_loss_price = self.sl_price
+        ob_strategy_signal = bar[f'{self.strategy}_signal']  
+
+        fields = [
+            self.bot_id,
+            ob_record_timestamp,
+            ob_bar_time, 
+            ob_open,
+            ob_high,
+            ob_low,
+            ob_close,
+            ob_action,
+            ob_in_position,
+            ob_stop_loss_price,
+            ob_strategy_signal
+        ]
+
+        # create new orderbook record
+        db_update.insert_order_book_bars_table(fields, self.db_config_parameters)
+
+
+    def _db_new_health_status(self, health_status, err):
+
+        health_status_timestamp = datetime.now().isoformat()
+
+        fields = [
+            self.bot_id,
+            health_status_timestamp,
+            health_status,
+            err
+        ]
+
+        # create new api health status database record
+        db_update.insert_health_status_table(fields, self.db_config_parameters)
+
 
     def _get_crossover(self, plot=False):
 
-        trading_strategy = TradingStrategy(self.bars_df, self.frequency)
+        trading_strategy = TradingStrategy(self.bars_df, self.frequency, mode='live')
         print(self.params)
         trading_strategy.add_strategy(
             self.strategy,
@@ -175,6 +266,7 @@ class TradingBot():
                 self.in_position = True
                 self.signal_time = df.loc[previous_period]['timestamp']
 
+                self._db_new_order(self.buy_order) # adding new order to database
             else:
                 self.logger.info(f"No new orders. Current position: {self.in_position}")
 
@@ -215,6 +307,8 @@ class TradingBot():
                     
                     print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
 
+                    self._db_new_order(self.sell_order) # adding new order to database
+
                     # reset positioning
                     self.in_position = False
                     self.buy_order = {}
@@ -250,13 +344,18 @@ class TradingBot():
             bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=50) # most recent candle keeps evolving
             self.bars_df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             self.bars_df['timestamp'] = pd.to_datetime(self.bars_df['timestamp'], unit='ms')
+            self.bars_df = self.bars_df.set_index('timestamp')
             self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
-            
+
             indicator_df = self._get_crossover()
             
-            self._check_buy_sell_signals(indicator_df, self.pair, self.owned_ccy_size, self.sl_pctg)
+            # self._check_buy_sell_signals(indicator_df, self.pair, self.owned_ccy_size, self.sl_pctg)
             self.logger.info('#####')
+
+            # self._db_new_health_status('UP', '') # adding new bot status
         
-        except Exception as e:
+        except Exception as err:
             self.logger.critical(f"Bot malfunctioned at {datetime.now().isoformat()}", exc_info=True)
             self.logger.info('#####')
+
+            # self._db_new_health_status('DOWN', err) # adding new bot status
