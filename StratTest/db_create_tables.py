@@ -7,15 +7,15 @@ def create_tables(config_parameters):
                 bot_id VARCHAR(40) PRIMARY KEY,
                 bot_pair VARCHAR(10) NOT NULL,
                 bot_owned_ccy_start_position NUMERIC NOT NULL,
-                bot_owned_ccy_end_position,
+                bot_owned_ccy_end_position NUMERIC,
                 bot_start_date TIMESTAMP NOT NULL,
                 bot_end_date TIMESTAMP,
                 bot_strategy VARCHAR(255) NOT NULL,
                 bot_strategy_parameters JSON,
                 bot_stop_loss_pctg NUMERIC,
-                bot_stop_type VARCHAR(30),
+                bot_stop_loss_type VARCHAR(30),
                 bot_freq VARCHAR(30) NOT NULL,
-                bot_exchange VARCHAR(30)
+                bot_exchange VARCHAR(30) NOT NULL
         )
         """,
         """ 
@@ -39,7 +39,7 @@ def create_tables(config_parameters):
         """,
         """
         CREATE TABLE IF NOT EXISTS bot_orders_tbl (
-                order_id VARCHAR(42) TEXT PRIMARY KEY,
+                order_id VARCHAR(42) PRIMARY KEY,
                 order_bot_id VARCHAR(40),
                 order_timestamp_placed TIMESTAMP NOT NULL,
                 order_price_placed NUMERIC NOT NULL,

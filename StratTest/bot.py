@@ -6,6 +6,7 @@ import pandas as pd
 import ccxt
 import config
 import uuid
+import json
 
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
@@ -48,7 +49,7 @@ class TradingBot():
         
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
-        # self._db_new_bot() # add new bot to database
+        self._db_new_bot() # add new bot to database
 
 
     def _db_new_bot(self):
@@ -59,6 +60,7 @@ class TradingBot():
         bot_start_date = self.signal_time
         bot_end_date = None
         bot_exchange = 'Bitstamp' # static for now
+        json_parameters = json.dumps(self.params)
         
         fields = [
             self.bot_id,
@@ -68,15 +70,25 @@ class TradingBot():
             bot_start_date,
             bot_end_date,
             self.strategy,
-            self.params,
-            self.sl_type,
+            json_parameters,
             self.sl_pctg,
+            self.sl_type,
             self.frequency,
             bot_exchange
         ]
         # create new database record
         db_update.insert_bots_table(fields, self.db_config_parameters)
 
+
+    def _db_update_bot(self):
+        
+        fields = [
+            self.bot_id,
+            self.end_of_bot_time,
+            # a position
+            # TODO take time and final position when process is terminated
+        ]
+        db_update.insert_bots_table(fields, self.db_config_parameters)
 
     def _db_new_order(self, order):
         order_id = 'order-' + str(uuid.uuid4())
@@ -94,7 +106,7 @@ class TradingBot():
         order_ob_bid_price = self.top_bid_px
         order_ob_ask_price = self.top_ask_px
         order_ob_bid_size = self.top_bid_quantity
-        order_ob_ask_size = self.top_ask_px
+        order_ob_ask_size = self.top_ask_quantity
         order_exchange_trade_id = order['id']
         order_trades = order['trades']
         order_quantity_filled = order['amount'] - order['remaining']
@@ -116,7 +128,7 @@ class TradingBot():
             order_trades,
             order_quantity_filled
         ]
-
+        print(fields)
         # create new order database record
         db_update.insert_orders_table(fields, self.db_config_parameters)
 
@@ -355,7 +367,11 @@ class TradingBot():
             # self._db_new_health_status('UP', '') # adding new bot status
         
         except Exception as err:
-            self.logger.critical(f"Bot malfunctioned at {datetime.now().isoformat()}", exc_info=True)
+            self.end_of_bot_time = datetime.now().isoformat()
+            self.logger.critical(f"Bot malfunctioned at {self.end_of_bot_time}", exc_info=True)
             self.logger.info('#####')
+            # TODO  handle this block: closing all positions/open orders?
+            # select all open orders and cancel
+            # check current position, close netting to 0
 
             # self._db_new_health_status('DOWN', err) # adding new bot status

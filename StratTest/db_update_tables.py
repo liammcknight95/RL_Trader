@@ -1,4 +1,5 @@
 import psycopg2
+import pandas as pd
 
 def execute_db_commands(sql, fields, config_parameters):
     """ Template to execute postgres commands 
@@ -44,8 +45,8 @@ def insert_bots_table(fields, config_parameters):
             bot_end_date,
             bot_strategy,
             bot_strategy_parameters,
-            bot_stop_loss_type,
             bot_stop_loss_pctg,
+            bot_stop_loss_type,
             bot_freq,
             bot_exchange
         ) 
@@ -54,6 +55,15 @@ def insert_bots_table(fields, config_parameters):
     execute_db_commands(sql, fields, config_parameters)
     return sql
 
+
+def update_bots_table(fields, config_parameters):
+    sql = """
+        UPDATE bot_bots_tbl
+            SET bot_owned_ccy_end_position = %s AND bot_end_date = %s
+            WHERE bot_id = %s
+    """
+    execute_db_commands(sql, fields, config_parameters)
+    return sql
 
 def insert_order_book_bars_table(fields, config_parameters):
     sql = """ 
@@ -114,6 +124,26 @@ def insert_health_status_table(fields, config_parameters):
     execute_db_commands(sql, fields, config_parameters)
     return sql
 
+
+## SELECT QUERIES
+def select_all_bot_orders(bot_id, config_parameters):
+    sql = f"""
+    SELECT 
+        order_id, 
+        order_bot_id,
+        order_exchange_trade_id,
+        order_status,
+        order_quantity_filled
+    FROM 
+        bot_orders_tbl
+    WHERE 
+        order_bot_id = '{bot_id}' AND
+        (order_status = 'dormant' OR order_status = 'partialled')
+    """
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data
 
 # TODO update existing order:
 # update if partially or totally filled - amount
