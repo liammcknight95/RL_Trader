@@ -5,158 +5,6 @@ from chart_viz_config import strategies, currencies, frequencies
 from datetime import date
 import plotly.graph_objects as go
 
-def dynamic_strategy_controls(strategy):
-    if strategy == 'EMACrossOverLS' or strategy == 'EMACrossOverLO':
-        return [
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Label("Short EMA"),
-                        dbc.Input(
-                            id="strategy-param-1", 
-                            type="number", 
-                            min=strategies[strategy]['short_ema'].min(), 
-                            max=strategies[strategy]['short_ema'].max(), 
-                            value=15,
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ]
-            ),
-
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Label("Long EMA"),
-                        dbc.Input(
-                            id="strategy-param-2", 
-                            type="number", 
-                            min=strategies[strategy]['long_ema'].min(), 
-                            max=strategies[strategy]['long_ema'].max(), 
-                            value=30,
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ]
-            ),
-        ]
-
-    elif strategy == 'BollingerBandsLO':
-        return [
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Label("MA window"),
-                        dbc.Input(
-                            id="strategy-param-1", 
-                            type="number", 
-                            min=strategies[strategy]['window'].min(), 
-                            max=strategies[strategy]['window'].max(), 
-                            value=15,
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ]
-            ),
-
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Label("Standard deviation factor"),
-                        dbc.Input(
-                            id="strategy-param-2", 
-                            type="number", 
-                            min=strategies[strategy]['window_dev'].min(), 
-                            max=strategies[strategy]['window_dev'].max(), 
-                            value=1,
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ]
-            ),
-        ]
-
-
-    elif strategy == 'MultiIndic':
-        return [
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Label("Short EMA"),
-                        dbc.Input(
-                            id="strategy-param-1", 
-                            type="number", 
-                            min=strategies[strategy]['short_ema'].min(), 
-                            max=strategies[strategy]['short_ema'].max(), 
-                            value=15,
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ],
-                style={'display': 'none'}
-            ),
-
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Label("Long EMA"),
-                        dbc.Input(
-                            id="strategy-param-2", 
-                            type="number", 
-                            min=strategies[strategy]['long_ema'].min(), 
-                            max=strategies[strategy]['long_ema'].max(), 
-                            value=30,
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ],
-                style={'display': 'none'}
-            ),
-        ]
-
-    elif strategy == 'Buy&Hold':
-        return [
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Input(
-                            id="strategy-param-1",
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ],
-                style={'display': 'none'}
-            ),
-
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                        dbc.Input(
-                            id="strategy-param-2",
-                            persistence=True
-                        ),
-                        ]
-                    )
-                ],
-                style={'display': 'none'}
-            ),
-        ]
-
 controls = dbc.Card(
     [
 
@@ -221,7 +69,7 @@ controls = dbc.Card(
                 [
                     dbc.Label("Strategy"),
                     dcc.Dropdown(
-                        id="strategy-input",
+                        id="strategy-backtest-strategy",
                         options=[
                             {"label": col, "value": col} for col in strategies.keys()
                         ],
@@ -230,7 +78,7 @@ controls = dbc.Card(
                     ),
                 ],
             )
-            ),
+        ),
 
         html.Br(),
 

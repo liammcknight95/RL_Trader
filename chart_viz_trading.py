@@ -2,18 +2,22 @@ from dash import Input, Output, State, callback, no_update, callback_context, MA
 from datetime import datetime
 import os, signal, uuid
 from subprocess import Popen, call
+import dash_bootstrap_components as dbc
 from chart_viz_config import bot_script_path
-from chart_viz_trading_layout import new_bot_info
+from chart_viz_trading_layout import new_bot_info, new_balance_fetched
+from chart_viz_strategy_inputs_layout import dynamic_strategy_controls
 import json
+import config
+import ccxt
 
 @callback(
     Output("trading-amend-bot-message", "children"),
     Input("trading-new-bot", "n_clicks"),
-    Input({'type': 'trading-bot-btn-kill', 'index': ALL}, "n_clicks"),
+    Input({'type': 'trading-bot-btn-liquidate', 'index': ALL}, "n_clicks"),
     State("trading-ccy-pairs", "value"),
     prevent_initial_call=True
 )
-def spin_up_new_bot(n_click_new_bot, n_click_kill_bot, pair):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -41,12 +45,12 @@ def spin_up_new_bot(n_click_new_bot, n_click_kill_bot, pair):
 
         message = f"CREATED new {pair[0]} Bot at {datetime.now().isoformat()}. Unique id: {new_bot_unique_id}"
         
-    # if a bot is being deleted - ie a btn kill has actually been clicked
-    elif "trading-bot-btn-kill" in ctx_id.split('.')[0] and ctx_value is not None:
+    # if a bot is being deleted - ie a btn liquidate has actually been clicked
+    elif "trading-bot-btn-liquidate" in ctx_id.split('.')[0] and ctx_value is not None:
         
-        # kill the targeted bot
+        # liquidate the targeted bot
         deleted_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
-        print("in killing bot block", deleted_bot_unique_id)
+        print("in liquidate bot block", deleted_bot_unique_id)
 
         # load processes log
         with open("run_mock_script_store.json") as f:
@@ -56,7 +60,7 @@ def spin_up_new_bot(n_click_new_bot, n_click_kill_bot, pair):
 
         try:
             os.kill(int(p_id), signal.SIGKILL)
-            data[deleted_bot_unique_id] = [p_id, 'killed']
+            data[deleted_bot_unique_id] = [p_id, 'liquidated']
             with open('run_mock_script_store.json', 'w') as f:
                 json.dump(data, f)
             message = f"DELETED Bot at {datetime.now().isoformat()}. Unique id: {deleted_bot_unique_id}"
@@ -115,3 +119,39 @@ def populate_running_bots_list(amend_bot_message, existing_bots_list):
     else:
         print('#### Not captured')
         return no_update
+
+
+@callback(
+    Output("trading-non-zero-balances-free-list", "children"),
+    Output("trading-non-zero-balances-used-list", "children"),
+    Output("trading-non-zero-balances-total-list", "children"),
+    Input("trading-live-bots-list", "children")
+)
+def populate_non_zero_balances(bots_list):
+    print('in update balance block')
+    # fetch balances - TODO better way than creating exchange obj every time
+    exchange = ccxt.bitstamp(
+        {
+            'apiKey': config.BITSTAMP_API_KEY,
+            'secret': config.BITSTAMP_API_SECRET
+        }
+    )
+
+    balances = exchange.fetch_balance()
+
+    # non zero balances
+    balances_free = [new_balance_fetched(ccy, balances['free'][ccy], 'free') for ccy in balances['free'].keys() if balances['free'][ccy]!=0]
+    balances_used = [new_balance_fetched(ccy, balances['used'][ccy], 'used') for ccy in balances['used'].keys() if balances['used'][ccy]!=0]
+    balances_total = [new_balance_fetched(ccy, balances['total'][ccy], 'total') for ccy in balances['total'].keys() if balances['total'][ccy]!=0]
+
+    return balances_free, balances_used, balances_total
+
+
+# handle display of strategy parameters
+@callback(
+    Output("trading-bot-strategy-parameter-elements", "children"),
+    Input("trading-bot-strategy", "value")
+)
+def display_strategy_parameters(strategy):
+    elements = dbc.Col([dbc.Label("Strategy parameters")]+ dynamic_strategy_controls(strategy, "bot"))
+    return elements

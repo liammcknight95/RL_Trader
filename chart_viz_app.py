@@ -286,12 +286,12 @@ def trigger_new_cache(pair, start_date, end_date):
     Output("strategy-sharpe-ratio-stat", "children"),
     Output("strategy-single-trades", "figure"),
     Input("chart-data-store-ref", "children"),
-    Input("strategy-input", "value"),
+    Input("strategy-backtest-strategy", "value"),
     Input("data-frequency-variable", "value"),
     Input("strategy-transaction-cost", "value"),
     Input("strategy-stop-loss", "value"),
-    Input("strategy-param-1", "value"),
-    Input("strategy-param-2", "value"),
+    Input("backtest-strategy-param-1", "value"),
+    Input("backtest-strategy-param-2", "value"),
     State("session-id", "children"),
     prevent_initial_call=True
 )
