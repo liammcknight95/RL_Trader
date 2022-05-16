@@ -110,6 +110,8 @@ class TradingBot():
         order_exchange_trade_id = order['id']
         order_trades = order['trades']
         order_quantity_filled = order['amount'] - order['remaining']
+        order_price_filled = None
+        order_fee = None
 
         fields = [
             order_id,
@@ -126,11 +128,31 @@ class TradingBot():
             order_ob_ask_size,
             order_exchange_trade_id,
             order_trades,
-            order_quantity_filled
+            order_quantity_filled,
+            order_price_filled,
+            order_fee
         ]
         print(fields)
         # create new order database record
         db_update.insert_orders_table(fields, self.db_config_parameters)
+
+
+    def _db_update_order(self, order_id, order_checked):
+        order_status = ...
+        order_trades = order_checked
+        order_quantity_filled = order_checked['amount']
+        order_price_filled = order_checked['price']
+
+        fields = [
+            order_status,
+            order_trades,
+            order_quantity_filled,
+            order_price_filled,
+            self.bot_id,
+            order_id
+        ]
+
+        db_update.update_single_order_table(fields, self.config_parameters)
 
 
     def _db_new_order_book(self, bar):
@@ -233,12 +255,20 @@ class TradingBot():
         assert len(self.pair_open_orders) <= 1, f''' Too many orders ({len(self.pair_open_orders)}) on {self.pair} - logic did not work correctly. Check open orders immediately. exchange.fetchOpenOrders(symbol) '''
 
 
-    def order_executed_check(self, id):
+    def order_executed_check(self, order_id):
         ''' Check if a certain order 'id' has been executed '''
-
+        # TODO check if this order check is robust of if order executed in multiple tranches might return multiple entries for that certain order id
         self.executed_orders = self.exchange.fetchMyTrades(self.pair)
-        return len([order['order'] for order in self.executed_orders if order['order']==id]) == 1
+        current_order_records = [order['order'] for order in self.executed_orders if order['order']==order_id]
+        order_checked = len(current_order_records) == 1
+        
+        if order_checked:
+            self._db_update_order(order_id, current_order_records[0]) # only value with records in the database
+            self.logger.info(f"-- Order status updated at {datetime.now().isoformat()}")
+        else:
+            self.logger.warning(f"-- Order not updated, order_checked not 1 {current_order_records} - at {datetime.now().isoformat()}")
 
+        return order_checked
 
     ## TODO ORDER MANAGEMENT METHOD:
     ## check against open orders, live orders and past trade. Essential: order ID, side, amount (filled) and state of the order
@@ -370,8 +400,37 @@ class TradingBot():
             self.end_of_bot_time = datetime.now().isoformat()
             self.logger.critical(f"Bot malfunctioned at {self.end_of_bot_time}", exc_info=True)
             self.logger.info('#####')
-            # TODO  handle this block: closing all positions/open orders?
-            # select all open orders and cancel
+
+            # TODO check if this block is always executed when shutting the script
+
+            # get all open orders for this bot and cancel
+            pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)
+            pending_orders_id = pending_orders_df['order_id'].tolist()
+            for order_id in pending_orders_id:
+                self.exchange.cancel_order(order_id)
+
             # check current position, close netting to 0
+            net_exposure = db_update.select_bot_current_exposure(self.bot_id, self.db_config_parameters)
+            # if positive exposure, sell it
+            if net_exposure > 0:
+                self.closing_order = self.exchange.createOrder(
+                    self.pair, 
+                    'market', 
+                    'sell', 
+                    net_exposure
+                )
+                self.get_ob_and_sizing(self) # check order book as a reference
+                self._db_new_order(self.closing_order)
+
+            # if negative exposure, close it
+            elif net_exposure < 0:
+                self.closing_order = self.exchange.createOrder(
+                    self.pair, 
+                    'market', 
+                    'buy', 
+                    net_exposure
+                )
+                self.get_ob_and_sizing(self) # check order book as a reference
+                self._db_new_order(self.closing_order)
 
             # self._db_new_health_status('DOWN', err) # adding new bot status

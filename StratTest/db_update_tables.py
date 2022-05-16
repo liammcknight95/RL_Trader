@@ -103,9 +103,39 @@ def insert_orders_table(fields, config_parameters):
             order_ob_ask_size,
             order_exchange_trade_id,
             order_trades,
-            order_quantity_filled
+            order_quantity_filled,
+            order_price_filled,
+            order_fee
         ) 
-        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+    """
+    execute_db_commands(sql, fields, config_parameters)
+    return sql
+
+
+def update_single_order_table(fields, config_parameters):
+    sql = """
+        UPDATE bot_orders_tbl
+            SET order_status = %s AND 
+                order_trades = %s AND 
+                order_quantity_filled = %s
+            WHERE bot_id = %s AND order_id = %s
+    """
+    execute_db_commands(sql, fields, config_parameters)
+    return sql
+
+
+# TODO update all pending orders when cancelling the bot - update_pending_orders_table in progress
+# update orders when cancelled by the strategy 
+def update_pending_orders_table(fields, config_parameters):
+    sql = """
+        UPDATE bot_orders_tbl
+            SET order_status = %s AND 
+                order_trades = %s AND 
+                order_quantity_filled = %s
+            WHERE 
+                order_bot_id = %s AND
+                (order_status = 'dormant' OR order_status = 'partialled')
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
@@ -124,6 +154,7 @@ def insert_health_status_table(fields, config_parameters):
     execute_db_commands(sql, fields, config_parameters)
     return sql
 
+# TODO update order quantity filled
 
 ## SELECT QUERIES
 def select_all_bot_orders(bot_id, config_parameters):
@@ -144,6 +175,44 @@ def select_all_bot_orders(bot_id, config_parameters):
     conn = psycopg2.connect(**config_parameters)
     data = pd.read_sql(sql, conn)
     return data
+
+def select_bot_current_exposure(bot_id, config_parameters):
+    sql = f"""
+    SELECT 
+        SUM(CASE 
+            WHEN order_direction='buy' THEN order_quantity_filled * 1 
+            WHEN order_direction='sell' THEN order_quantity_filled * -1  
+        END) AS order_net_filled	
+        
+    FROM 
+        bot_orders_tbl
+    WHERE 
+        order_bot_id = '{bot_id}'
+    """
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data.values[0][0]
+    
+
+def select_bots(config_parameters, bot_id=''):
+    ''' query that select bots, either all or single one '''
+
+    if len(bot_id)>0:
+        where_statement = f"WHERE bot_id = '{bot_id}'"
+    else:
+        where_statement = ""
+
+    sql = f""" 
+    SELECT * FROM bot_bots_tbl {where_statement}
+    """
+
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data
+
+
 
 # TODO update existing order:
 # update if partially or totally filled - amount

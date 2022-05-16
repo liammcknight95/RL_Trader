@@ -54,6 +54,8 @@ def create_tables(config_parameters):
                 order_exchange_trade_id TEXT,
                 order_trades TEXT[],
                 order_quantity_filled NUMERIC,
+                order_price_filled NUMERIC,
+                order_fee NUMERIC,
                 FOREIGN KEY (order_bot_id)
                     REFERENCES bot_bots_tbl (bot_id)
                     ON DELETE CASCADE
