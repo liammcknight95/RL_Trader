@@ -20,19 +20,19 @@ def create_tables(config_parameters):
         """,
         """ 
         CREATE TABLE IF NOT EXISTS bot_order_book_bars_tbl (
-                ob_id SERIAL PRIMARY KEY,
-                ob_bot_id VARCHAR(40),
-                ob_record_timestamp TIMESTAMP NOT NULL,
-                ob_bar_time TIMESTAMP,
-                ob_open NUMERIC,
-                ob_high NUMERIC,
-                ob_low NUMERIC,
-                ob_close NUMERIC,
-                ob_action TEXT,
-                ob_in_position BOOLEAN,
-                ob_stop_loss_price NUMERIC,
-                ob_strategy_signal JSON,
-                FOREIGN KEY (ob_bot_id)
+                bar_id SERIAL PRIMARY KEY,
+                bar_bot_id VARCHAR(40),
+                bar_record_timestamp TIMESTAMP NOT NULL,
+                bar_time TIMESTAMP,
+                bar_open NUMERIC,
+                bar_high NUMERIC,
+                bar_low NUMERIC,
+                bar_close NUMERIC,
+                bar_action TEXT,
+                bar_in_position BOOLEAN,
+                bar_stop_loss_price NUMERIC,
+                bar_strategy_signal JSON,
+                FOREIGN KEY (bar_bot_id)
                     REFERENCES bot_bots_tbl (bot_id)
                     ON DELETE CASCADE
         )

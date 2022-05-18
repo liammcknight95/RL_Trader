@@ -81,12 +81,12 @@ class TradingBot():
 
 
     def _db_update_bot(self):
-        
+        # TODO calculate this dynamically
+        bot_owned_ccy_end_position = 0
         fields = [
-            self.bot_id,
+            bot_owned_ccy_end_position,
             self.end_of_bot_time,
-            # a position
-            # TODO take time and final position when process is terminated
+            self.bot_id
         ]
         db_update.insert_bots_table(fields, self.db_config_parameters)
 
@@ -109,7 +109,7 @@ class TradingBot():
         order_ob_ask_size = self.top_ask_quantity
         order_exchange_trade_id = order['id']
         order_trades = order['trades']
-        order_quantity_filled = order['amount'] - order['remaining']
+        order_quantity_filled = order['amount'] - order['remaining'] # or simply the filled part
         order_price_filled = None
         order_fee = None
 
@@ -138,7 +138,8 @@ class TradingBot():
 
 
     def _db_update_order(self, order_id, order_checked):
-        order_status = ...
+        order_status = 'filled' # TODO make it more flexible to support multiple execution chunks
+        # ie: all trades associated with the order and sum amount traded across those
         order_trades = order_checked
         order_quantity_filled = order_checked['amount']
         order_price_filled = order_checked['price']
@@ -155,32 +156,32 @@ class TradingBot():
         db_update.update_single_order_table(fields, self.config_parameters)
 
 
-    def _db_new_order_book(self, bar):
+    def _db_new_bar(self, bar):
         ''' bar: pd.Series containing strategy latest pulled data and indicator '''
 
-        ob_record_timestamp = datetime.now().isoformat()
-        ob_bar_time = bar['timestamp'] # TODO check if this is correct, time need not to be index
-        ob_open = bar['open']
-        ob_high = bar['high']
-        ob_low = bar['low']
-        ob_close = bar['close']
-        ob_action = bar[f'{self.strategy}_trades']
-        ob_in_position = self.in_position
-        ob_stop_loss_price = self.sl_price
-        ob_strategy_signal = bar[f'{self.strategy}_signal']  
+        bar_record_timestamp = datetime.now().isoformat()
+        bar_bar_time = bar['timestamp'] # TODO check if this is correct, time need not to be index
+        bar_open = bar['open']
+        bar_high = bar['high']
+        bar_low = bar['low']
+        bar_close = bar['close']
+        bar_action = bar[f'{self.strategy}_trades']
+        bar_in_position = self.in_position
+        bar_stop_loss_price = self.sl_price
+        bar_strategy_signal = bar[f'{self.strategy}_signal']  
 
         fields = [
             self.bot_id,
-            ob_record_timestamp,
-            ob_bar_time, 
-            ob_open,
-            ob_high,
-            ob_low,
-            ob_close,
-            ob_action,
-            ob_in_position,
-            ob_stop_loss_price,
-            ob_strategy_signal
+            bar_record_timestamp,
+            bar_bar_time, 
+            bar_open,
+            bar_high,
+            bar_low,
+            bar_close,
+            bar_action,
+            bar_in_position,
+            bar_stop_loss_price,
+            bar_strategy_signal
         ]
 
         # create new orderbook record
@@ -376,8 +377,6 @@ class TradingBot():
                     self.sl_price = 0
 
 
-
-
     def run_bot(self):
         ''' Method that runs the trading bot - to be wrapped inside a scheduler '''
 
@@ -389,12 +388,17 @@ class TradingBot():
             self.bars_df = self.bars_df.set_index('timestamp')
             self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
 
+            # update bars record on database
+            self._db_new_bar(self.bars_df.iloc[-1])
+
+            # generate signal
             indicator_df = self._get_crossover()
             
+            # generate orders based on signal
             # self._check_buy_sell_signals(indicator_df, self.pair, self.owned_ccy_size, self.sl_pctg)
             self.logger.info('#####')
 
-            # self._db_new_health_status('UP', '') # adding new bot status
+            self._db_new_health_status('UP', '') # adding new bot status
         
         except Exception as err:
             self.end_of_bot_time = datetime.now().isoformat()
@@ -433,4 +437,4 @@ class TradingBot():
                 self.get_ob_and_sizing(self) # check order book as a reference
                 self._db_new_order(self.closing_order)
 
-            # self._db_new_health_status('DOWN', err) # adding new bot status
+            self._db_new_health_status('DOWN', err) # adding new bot status

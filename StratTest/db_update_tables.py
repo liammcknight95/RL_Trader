@@ -68,17 +68,17 @@ def update_bots_table(fields, config_parameters):
 def insert_order_book_bars_table(fields, config_parameters):
     sql = """ 
         INSERT INTO bot_order_book_bars_tbl(
-            ob_bot_id,
-            ob_record_timestamp,
-            ob_bar_time,
-            ob_open,
-            ob_high,
-            ob_low,
-            ob_close,
-            ob_action,
-            ob_in_position,
-            ob_stop_loss_price,
-            ob_strategy_signal
+            bar_bot_id,
+            bar_record_timestamp,
+            bar_time,
+            bar_open,
+            bar_high,
+            bar_low,
+            bar_close,
+            bar_action,
+            bar_in_position,
+            bar_stop_loss_price,
+            bar_strategy_signal
         ) 
         VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,  %s) 
     """
