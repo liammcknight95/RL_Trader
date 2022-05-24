@@ -46,7 +46,8 @@ class TradingBot():
         self.in_position = False
         self.signal_time = pd.Timestamp(datetime.now()) # initiate signal time, updated throughout bot lif
         self.owned_ccy_size = owned_ccy_size
-        
+        self.sl_price = None
+
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
         self._db_new_bot() # add new bot to database
@@ -160,15 +161,16 @@ class TradingBot():
         ''' bar: pd.Series containing strategy latest pulled data and indicator '''
 
         bar_record_timestamp = datetime.now().isoformat()
-        bar_bar_time = bar['timestamp'] # TODO check if this is correct, time need not to be index
+        bar_bar_time = bar['timestamp']
         bar_open = bar['open']
         bar_high = bar['high']
         bar_low = bar['low']
         bar_close = bar['close']
+        bar_volume = bar['volume']
         bar_action = bar[f'{self.strategy}_trades']
         bar_in_position = self.in_position
         bar_stop_loss_price = self.sl_price
-        bar_strategy_signal = bar[f'{self.strategy}_signal']  
+        bar_strategy_signal = int(bar[f'{self.strategy}_signal'])
 
         fields = [
             self.bot_id,
@@ -178,6 +180,7 @@ class TradingBot():
             bar_high,
             bar_low,
             bar_close,
+            bar_volume,
             bar_action,
             bar_in_position,
             bar_stop_loss_price,
@@ -274,18 +277,18 @@ class TradingBot():
     ## TODO ORDER MANAGEMENT METHOD:
     ## check against open orders, live orders and past trade. Essential: order ID, side, amount (filled) and state of the order
 
-    def _check_buy_sell_signals(self, df):
+    def _check_buy_sell_signals(self):
 
-        current_period = df.index[-1] # current bar - used for stop losses and reversals
-        previous_period = df.index[-2] # previous bar - used to check signals
+        current_period = self.bars_df.index[-1] # current bar - used for stop losses and reversals
+        previous_period = self.bars_df.index[-2] # previous bar - used to check signals
 
-        self.current_price = df.loc[current_period]['close']
-        self.previous_price = df.loc[previous_period]['close']
+        self.current_price = self.bars_df.loc[current_period]['close']
+        self.previous_price = self.bars_df.loc[previous_period]['close']
 
         if not self.in_position:
             # if not in position, check the signal
 
-            if df.loc[previous_period][f'{self.strategy}_new_position']==1 and df.loc[previous_period]['timestamp']>self.signal_time:
+            if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==1 and self.bars_df.loc[previous_period]['timestamp']>self.signal_time:
                 # if signal is 1 and has been generated on a new bar - new timestamp
 
                 # get order book and sizing
@@ -307,7 +310,7 @@ class TradingBot():
                 self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
                 print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                 self.in_position = True
-                self.signal_time = df.loc[previous_period]['timestamp']
+                self.signal_time = self.bars_df.loc[previous_period]['timestamp']
 
                 self._db_new_order(self.buy_order) # adding new order to database
             else:
@@ -333,7 +336,7 @@ class TradingBot():
 
 
                 
-                if df.loc[previous_period][f'{self.strategy}_new_position']==-1 or self.current_price <= self.sl_price:
+                if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==-1 or self.current_price <= self.sl_price:
                     # when signal reverses, close the position with sell market order
 
                     # retrieve a fresh order book
@@ -364,7 +367,7 @@ class TradingBot():
             else:
                 # if order has not been executed yet, check if keeping it open or cancelling it
 
-                if df.loc[previous_period][f'{self.strategy}_new_position']>-1 and self.current_price > self.sl_price:
+                if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']>-1 and self.current_price > self.sl_price:
                     self.logger.info(f"Order {self.buy_order['id']}: PLACED BUT NOT yet executed at {self.buy_order['price']}. Trying to execute it. Current position: {self.in_position}")
                 
                 else:
@@ -382,20 +385,24 @@ class TradingBot():
 
         try:
 
-            bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=50) # most recent candle keeps evolving
+            bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=250) # most recent candle keeps evolving
             self.bars_df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             self.bars_df['timestamp'] = pd.to_datetime(self.bars_df['timestamp'], unit='ms')
             self.bars_df = self.bars_df.set_index('timestamp')
             self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
 
             # update bars record on database
-            self._db_new_bar(self.bars_df.iloc[-1])
 
-            # generate signal
-            indicator_df = self._get_crossover()
+            # generate signal - updates self.bars_df
+            self._get_crossover()
             
             # generate orders based on signal
-            # self._check_buy_sell_signals(indicator_df, self.pair, self.owned_ccy_size, self.sl_pctg)
+            self._check_buy_sell_signals()
+
+            print(self.bars_df.reset_index().iloc[-1])
+            self._db_new_bar(self.bars_df.reset_index().iloc[-1]) # here in order to also add info about the indicator and stop losses
+            # reset index helps handing timestamp in _db_new_bar
+
             self.logger.info('#####')
 
             self._db_new_health_status('UP', '') # adding new bot status
@@ -406,6 +413,7 @@ class TradingBot():
             self.logger.info('#####')
 
             # TODO check if this block is always executed when shutting the script
+            # TODO capture keyboard interrupt and SIGKILL
 
             # get all open orders for this bot and cancel
             pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)

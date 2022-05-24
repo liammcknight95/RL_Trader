@@ -75,12 +75,13 @@ def insert_order_book_bars_table(fields, config_parameters):
             bar_high,
             bar_low,
             bar_close,
+            bar_volume,
             bar_action,
             bar_in_position,
             bar_stop_loss_price,
             bar_strategy_signal
         ) 
-        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,  %s) 
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
