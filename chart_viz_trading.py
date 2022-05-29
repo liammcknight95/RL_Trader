@@ -59,7 +59,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair):
         p_id = data[deleted_bot_unique_id][0]
 
         try:
-            os.kill(int(p_id), signal.SIGKILL)
+            os.kill(int(p_id), signal.SIGINT) # simulates KeyboardInterrupt
             data[deleted_bot_unique_id] = [p_id, 'liquidated']
             with open('run_mock_script_store.json', 'w') as f:
                 json.dump(data, f)

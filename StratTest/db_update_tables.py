@@ -59,7 +59,8 @@ def insert_bots_table(fields, config_parameters):
 def update_bots_table(fields, config_parameters):
     sql = """
         UPDATE bot_bots_tbl
-            SET bot_owned_ccy_end_position = %s AND bot_end_date = %s
+            SET bot_owned_ccy_end_position = %s, 
+                bot_end_date = %s
             WHERE bot_id = %s
     """
     execute_db_commands(sql, fields, config_parameters)
@@ -117,8 +118,8 @@ def insert_orders_table(fields, config_parameters):
 def update_single_order_table(fields, config_parameters):
     sql = """
         UPDATE bot_orders_tbl
-            SET order_status = %s AND 
-                order_trades = %s AND 
+            SET order_status = %s, 
+                order_trades = %s, 
                 order_quantity_filled = %s
             WHERE bot_id = %s AND order_id = %s
     """
@@ -131,8 +132,8 @@ def update_single_order_table(fields, config_parameters):
 def update_pending_orders_table(fields, config_parameters):
     sql = """
         UPDATE bot_orders_tbl
-            SET order_status = %s AND 
-                order_trades = %s AND 
+            SET order_status = %s, 
+                order_trades = %s, 
                 order_quantity_filled = %s
             WHERE 
                 order_bot_id = %s AND

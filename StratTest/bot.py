@@ -7,7 +7,7 @@ import ccxt
 import config
 import uuid
 import json
-
+import signal, sys
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
 # engine and make sure there's no gaps
@@ -82,14 +82,15 @@ class TradingBot():
 
 
     def _db_update_bot(self):
-        # TODO calculate this dynamically
-        bot_owned_ccy_end_position = 0
+        # TODO calculate bot_owned_ccy_end_position dynamically
+        bot_owned_ccy_end_position = 0.
         fields = [
             bot_owned_ccy_end_position,
             self.end_of_bot_time,
             self.bot_id
         ]
-        db_update.insert_bots_table(fields, self.db_config_parameters)
+        db_update.update_bots_table(fields, self.db_config_parameters)
+
 
     def _db_new_order(self, order):
         order_id = 'order-' + str(uuid.uuid4())
@@ -412,17 +413,22 @@ class TradingBot():
             self.logger.critical(f"Bot malfunctioned at {self.end_of_bot_time}", exc_info=True)
             self.logger.info('#####')
 
-            # TODO check if this block is always executed when shutting the script
-            # TODO capture keyboard interrupt and SIGKILL
 
-            # get all open orders for this bot and cancel
-            pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)
-            pending_orders_id = pending_orders_df['order_id'].tolist()
-            for order_id in pending_orders_id:
-                self.exchange.cancel_order(order_id)
+    ### Bot termination protocol steps ###
+    def _cancel_bot_pending_orders(self):
+        ''' When trading bot fails or is terminated, cancel all pending orders '''
+        # get all open orders for this bot and cancel
+        pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)
+        pending_orders_id = pending_orders_df['order_id'].tolist()
+        for order_id in pending_orders_id:
+            self.exchange.cancel_order(order_id)
 
-            # check current position, close netting to 0
-            net_exposure = db_update.select_bot_current_exposure(self.bot_id, self.db_config_parameters)
+
+    def _close_open_positions(self):
+        ''' When trading bot fails or is terminated, liquidate all positions as market orders '''
+        # check current position, close netting to 0
+        net_exposure = db_update.select_bot_current_exposure(self.bot_id, self.db_config_parameters)
+        if net_exposure:
             # if positive exposure, sell it
             if net_exposure > 0:
                 self.closing_order = self.exchange.createOrder(
@@ -431,7 +437,6 @@ class TradingBot():
                     'sell', 
                     net_exposure
                 )
-                self.get_ob_and_sizing(self) # check order book as a reference
                 self._db_new_order(self.closing_order)
 
             # if negative exposure, close it
@@ -442,7 +447,15 @@ class TradingBot():
                     'buy', 
                     net_exposure
                 )
-                self.get_ob_and_sizing(self) # check order book as a reference
                 self._db_new_order(self.closing_order)
+        else:
+            print(f'Net exposure is {net_exposure}')
 
-            self._db_new_health_status('DOWN', err) # adding new bot status
+
+    def _bot_termination_protocol(self, err):
+        self.end_of_bot_time = datetime.now().isoformat() # used to update database and in logger
+        self.logger.critical(f"Activated bot termination protocol at {self.end_of_bot_time}", exc_info=True)
+        self._cancel_bot_pending_orders()
+        self._close_open_positions()
+        self._db_update_bot() # update bots table
+        self._db_new_health_status('DOWN', err) # adding new bot status
