@@ -48,9 +48,10 @@ def insert_bots_table(fields, config_parameters):
             bot_stop_loss_pctg,
             bot_stop_loss_type,
             bot_freq,
-            bot_exchange
+            bot_exchange,
+            bot_script_pid
         ) 
-        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
@@ -197,7 +198,7 @@ def select_bot_current_exposure(bot_id, config_parameters):
     return data.values[0][0]
     
 
-def select_bots(config_parameters, bot_id=''):
+def select_single_bot(config_parameters, bot_id=''):
     ''' query that select bots, either all or single one '''
 
     if len(bot_id)>0:
@@ -209,11 +210,19 @@ def select_bots(config_parameters, bot_id=''):
     SELECT * FROM bot_bots_tbl {where_statement}
     """
 
-
     conn = psycopg2.connect(**config_parameters)
     data = pd.read_sql(sql, conn)
     return data
 
+
+def select_all_active_bots(config_parameters):
+    ''' query that selects all active bots, having a null end of bot time '''
+
+    sql = ''' SELECT * FROM bot_bots_tbl WHERE bot_end_date IS NULL '''
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data
 
 
 # TODO update existing order:

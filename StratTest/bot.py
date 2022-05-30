@@ -7,11 +7,12 @@ import ccxt
 import config
 import uuid
 import json
-import signal, sys
+import signal, sys, os
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
 # engine and make sure there's no gaps
 # TODO using order ID now, check if I can make use of transaction id
+print('##### bot.py', os.getpid())
 
 class TradingBot():
 
@@ -24,6 +25,10 @@ class TradingBot():
             sl_pctg: float - stop loss as a percentage of order price
             owned_ccy_size: float - amount of owned currency to be traded on a single order
         '''
+
+        self.script_pid = os.getpid()# script program di
+        print('##### inside class bot.py', os.getpid())
+
         ## Exchange connectivity
         self.exchange = ccxt.bitstamp(
             {
@@ -75,7 +80,8 @@ class TradingBot():
             self.sl_pctg,
             self.sl_type,
             self.frequency,
-            bot_exchange
+            bot_exchange,
+            self.script_pid
         ]
         # create new database record
         db_update.insert_bots_table(fields, self.db_config_parameters)
@@ -409,6 +415,7 @@ class TradingBot():
             self._db_new_health_status('UP', '') # adding new bot status
         
         except Exception as err:
+            self._db_new_health_status('MALF', str(err)[:100])
             self.end_of_bot_time = datetime.now().isoformat()
             self.logger.critical(f"Bot malfunctioned at {self.end_of_bot_time}", exc_info=True)
             self.logger.info('#####')
