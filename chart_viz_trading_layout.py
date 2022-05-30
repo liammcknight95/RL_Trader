@@ -35,7 +35,19 @@ running_bots_ui = dbc.Card(
                 html.P("List the running strategies here - from database")
             ],
             id="trading-live-bots-list"
-        )  
+        ),
+
+        dcc.Interval(
+            id="trading-live-bots-interval-refresh",
+            interval=1*2000, # in milliseconds
+            n_intervals=0
+        ),
+
+        dcc.Store(
+            id="trading-live-bots-element-python-list", 
+            storage_type="memory"
+        ),
+
     ],
     body=True
 )
@@ -171,7 +183,8 @@ def new_balance_fetched(ccy, balance, balance_type):
     return dbc.Row(
         [
             dbc.Col(
-                html.P(f'{ccy} - {balance:,}', id={"type":"trading-balance-info", "index":f"{ccy}-{balance_type}"}),
+                html.P(f'{ccy} - {balance:,}', 
+                id={"type":"trading-balance-info", "index":f"{ccy}-{balance_type}"}),
                 width=12
             ),
         ]

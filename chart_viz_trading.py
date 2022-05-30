@@ -1,4 +1,5 @@
 from dash import Input, Output, State, callback, no_update, callback_context, MATCH, ALL
+from dash.exceptions import PreventUpdate
 from datetime import datetime
 import os, signal, uuid
 from subprocess import Popen, call
@@ -6,18 +7,25 @@ import dash_bootstrap_components as dbc
 from chart_viz_config import bot_script_path
 from chart_viz_trading_layout import new_bot_info, new_balance_fetched
 from chart_viz_strategy_inputs_layout import dynamic_strategy_controls
+from StratTest import db_update_tables as db_update
 import json
 import config
 import ccxt
+import json
 
 @callback(
     Output("trading-amend-bot-message", "children"),
     Input("trading-new-bot", "n_clicks"),
     Input({'type': 'trading-bot-btn-liquidate', 'index': ALL}, "n_clicks"),
     State("trading-ccy-pairs", "value"),
+    State("trading-bot-strategy", "value"),
+    State("trading-store-freqs", "value"),
+    State("trading-bot-stop-loss", "value"),
+    State("bot-strategy-param-1", "value"),
+    State("bot-strategy-param-2", "value"),
     prevent_initial_call=True
 )
-def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, strategy, frequency, sl_bps, strategy_param_1, strategy_param_2):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -27,23 +35,41 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair):
     if ctx_id.split('.')[0] == "trading-new-bot":
 
         # launch the new bot
-        script_path = os.path.join(bot_script_path, "run_mock_script.py")
-        p = Popen(['python3', script_path])
-        new_bot_unique_id = str(uuid.uuid4())
+        script_path = os.path.join(bot_script_path, "run_bot.py") # run_mock_script
+        script_args = f"""--pair {pair} --strategy {strategy} --frequency {frequency} --sl_type trailing --sl_pctg {sl_bps/10000}
+        --owned_ccy_size 33 --short_ema {strategy_param_1} --long_ema {strategy_param_2}
+        """
 
-        # temp - use a json file to keep track of processes
-        # open existing file
-        with open("run_mock_script_store.json") as f:
-            data = json.load(f)
+        # spin up a new bot
+        p = Popen([
+            "python3", 
+            script_path,
+            "--pair", f"{pair}", # TODO check if exchange and app/data processing are using same convention
+            "--strategy", f"{strategy}",
+            "--frequency", f"{frequency}",
+            "--sl_type", "trailing", # TODO make this dynamic from UI?
+            "--sl_pctg", f"{sl_bps/10000}", # from bps to pctg
+            "--owned_ccy_size", f"{33}", # TODO make dynamic from ui
+            "--short_ema", f"{strategy_param_1}", # bot ui element strategy 1
+            "--long_ema", f"{strategy_param_2}" # bot ui element strategy 2
+        ])
 
-        # add new pid
-        data.update({new_bot_unique_id:[p.pid, 'active']})
+        # MOCK SPIN UP NEW SCRIPT
+        # new_bot_unique_id = str(uuid.uuid4())
 
-        # write back updated data
-        with open('run_mock_script_store.json', 'w') as f:
-            json.dump(data, f)
+        # # temp - use a json file to keep track of processes
+        # # open existing file
+        # with open("run_mock_script_store.json") as f:
+        #     data = json.load(f)
 
-        message = f"CREATED new {pair[0]} Bot at {datetime.now().isoformat()}. Unique id: {new_bot_unique_id}"
+        # # add new pid
+        # data.update({new_bot_unique_id:[p.pid, 'active']})
+
+        # # write back updated data
+        # with open('run_mock_script_store.json', 'w') as f:
+        #     json.dump(data, f)
+
+        message = f"CREATED new {pair[0]} Bot at {datetime.now().isoformat()}. Script id: {p.pid}"
         
     # if a bot is being deleted - ie a btn liquidate has actually been clicked
     elif "trading-bot-btn-liquidate" in ctx_id.split('.')[0] and ctx_value is not None:
@@ -52,21 +78,22 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair):
         deleted_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
         print("in liquidate bot block", deleted_bot_unique_id)
 
-        # load processes log
-        with open("run_mock_script_store.json") as f:
-            data = json.load(f)
+        # # load processes log
+        # with open("run_mock_script_store.json") as f:
+        #     data = json.load(f)
 
-        p_id = data[deleted_bot_unique_id][0]
+        # p_id = data[deleted_bot_unique_id][0]
+
+        # get program id using bot_id from - button id contains bot id that is used in database
+        delete_bot_df = db_update.select_single_bot(config.pg_db_configuration(location='local'), bot_id=deleted_bot_unique_id)
+        delete_bot_df_pid = delete_bot_df['bot_script_pid'].values[0]
 
         try:
-            os.kill(int(p_id), signal.SIGINT) # simulates KeyboardInterrupt
-            data[deleted_bot_unique_id] = [p_id, 'liquidated']
-            with open('run_mock_script_store.json', 'w') as f:
-                json.dump(data, f)
-            message = f"DELETED Bot at {datetime.now().isoformat()}. Unique id: {deleted_bot_unique_id}"
+            os.kill(int(delete_bot_df_pid), signal.SIGINT) # simulates KeyboardInterrupt
+            message = f"DELETED Bot at {datetime.now().isoformat()}. PID: {delete_bot_df_pid}. Unique id: {deleted_bot_unique_id}"
 
         except Exception as e:
-            message = f"TRIED to delete Bot at {datetime.now().isoformat()}. {e}. PID: {p_id}.  Unique id: {deleted_bot_unique_id}"   
+            message = f"TRIED to delete Bot at {datetime.now().isoformat()}. {e}. PID: {delete_bot_df_pid}.  Unique id: {deleted_bot_unique_id}"   
         
     else:
         message = 'No action performed'
@@ -76,49 +103,32 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair):
 
 @callback(
     Output("trading-live-bots-list", "children"),
+    Output("trading-live-bots-element-python-list", "data"),
     Input("trading-amend-bot-message", "children"),
-    State("trading-live-bots-list", "children"),
+    Input("trading-live-bots-interval-refresh", "n_intervals"),
+    State("trading-live-bots-element-python-list", "data"),
 )
-def populate_running_bots_list(amend_bot_message, existing_bots_list):
+def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bots_list):
 
-    # check the callback being triggered
-    ctx = callback_context.triggered[0]['prop_id']#.split('.')[0]
-    print(ctx)
+    live_bots_ui_children = []
+    active_bots_df = db_update.select_all_active_bots(config.pg_db_configuration(location='local'))
+    bot_ids = active_bots_df['bot_id']
 
-    # on app load or page reload
-    if ctx.split('.')[0] == '':
-        print('in page load block')
-        live_bots_ui_children = []
+    for bot_id in bot_ids:
+        live_bots_ui_children.append(new_bot_info(bot_id))
 
-        with open("run_mock_script_store.json") as f:
-            bots = json.load(f)
-        
-        for bot_id in bots.keys():
-            if bots[bot_id][1] == 'active':
-                live_bots_ui_children.append(new_bot_info(bot_id))
-        
-        return live_bots_ui_children
-
-    # if new bot has been created:
-    elif ctx.split('.')[0] == 'trading-amend-bot-message':
-        print('amending blocks')
-        message_words = amend_bot_message.split()
-        ui_action = message_words[0]
-        bot_id = message_words[-1] # extract the unique ID from the ui message
-
-        if ui_action == 'CREATED':
-            existing_bots_list.append(new_bot_info(bot_id))
-
-        elif ui_action == 'DELETED':
-            print('deleting....')
-            # find string matching unique uuid
-            existing_bots_list = [elem for elem in existing_bots_list if bot_id not in str(elem)]
-            ...
-        return existing_bots_list
+    if str(live_bots_ui_children) == existing_bots_list:
+        print('NO UPDATE')
+        return no_update, no_update
 
     else:
-        print('#### Not captured')
-        return no_update
+        print('UI UPDATED')
+        existing_bots_list = str(live_bots_ui_children) # assign same value
+
+        print(str(live_bots_ui_children))
+        print('(###)')
+        print(existing_bots_list)
+        return live_bots_ui_children, existing_bots_list
 
 
 @callback(
@@ -155,3 +165,5 @@ def populate_non_zero_balances(bots_list):
 def display_strategy_parameters(strategy):
     elements = dbc.Col([dbc.Label("Strategy parameters")]+ dynamic_strategy_controls(strategy, "bot"))
     return elements
+
+# TODO harmonize currecy pairs with exchnage
