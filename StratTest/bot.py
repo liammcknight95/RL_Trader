@@ -145,23 +145,28 @@ class TradingBot():
         db_update.insert_orders_table(fields, self.db_config_parameters)
 
 
-    def _db_update_order(self, order_id, order_checked):
+    def _db_update_order(self, order_exchange_trade_id, order_checked):
+        ''' updated orders in the database based on bot id and exchange trade id - bot id not necessary here, but 
+        helps to showcase that everything is handled on a bot by bot basis '''
         order_status = 'filled' # TODO make it more flexible to support multiple execution chunks
         # ie: all trades associated with the order and sum amount traded across those
-        order_trades = order_checked
+        order_trades = json.dumps(order_checked)
         order_quantity_filled = order_checked['amount']
         order_price_filled = order_checked['price']
+        order_fee = order_checked['fee']['cost']
 
         fields = [
             order_status,
             order_trades,
             order_quantity_filled,
             order_price_filled,
+            order_fee,
             self.bot_id,
-            order_id
+            order_exchange_trade_id,
+            
         ]
 
-        db_update.update_single_order_table(fields, self.config_parameters)
+        db_update.update_single_order_table(fields, self.db_config_parameters)
 
 
     def _db_new_bar(self, bar):
@@ -266,15 +271,15 @@ class TradingBot():
         assert len(self.pair_open_orders) <= 1, f''' Too many orders ({len(self.pair_open_orders)}) on {self.pair} - logic did not work correctly. Check open orders immediately. exchange.fetchOpenOrders(symbol) '''
 
 
-    def order_executed_check(self, order_id):
+    def order_executed_check(self, order_exchange_trade_id):
         ''' Check if a certain order 'id' has been executed '''
         # TODO check if this order check is robust of if order executed in multiple tranches might return multiple entries for that certain order id
         self.executed_orders = self.exchange.fetchMyTrades(self.pair)
-        current_order_records = [order['order'] for order in self.executed_orders if order['order']==order_id]
+        current_order_records = [order for order in self.executed_orders if order['order']==order_exchange_trade_id]
         order_checked = len(current_order_records) == 1
         
         if order_checked:
-            self._db_update_order(order_id, current_order_records[0]) # only value with records in the database
+            self._db_update_order(order_exchange_trade_id, current_order_records[0]) # only value with records in the database
             self.logger.info(f"-- Order status updated at {datetime.now().isoformat()}")
         else:
             self.logger.warning(f"-- Order not updated, order_checked not 1 {current_order_records} - at {datetime.now().isoformat()}")
@@ -299,7 +304,7 @@ class TradingBot():
                 # if signal is 1 and has been generated on a new bar - new timestamp
 
                 # get order book and sizing
-                self.get_ob_and_sizing(self.owned_ccy_size)
+                self.get_ob_and_sizing()
 
                 self.order_price = self.top_ask_px * 1.001
                 ## check if already in position, avoid double orders on same bar refreshing with new signal every time
@@ -347,7 +352,7 @@ class TradingBot():
                     # when signal reverses, close the position with sell market order
 
                     # retrieve a fresh order book
-                    self.get_ob_and_sizing(self.owned_ccy_size)
+                    self.get_ob_and_sizing()
 
                     self.sell_order = self.exchange.createOrder(
                         self.pair, 

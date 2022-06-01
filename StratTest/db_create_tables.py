@@ -54,7 +54,7 @@ def create_tables(config_parameters):
                 order_ob_bid_size NUMERIC,
                 order_ob_ask_size NUMERIC,
                 order_exchange_trade_id TEXT,
-                order_trades TEXT[],
+                order_trades JSON,
                 order_quantity_filled NUMERIC,
                 order_price_filled NUMERIC,
                 order_fee NUMERIC,

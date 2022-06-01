@@ -23,7 +23,7 @@ def execute_db_commands(sql, fields, config_parameters):
 
     # TODO add logging of database operation results here
     except (Exception, psycopg2.DatabaseError) as error:
-        print(error)
+        print("Database error, record not appended: ", error)
 
     except psycopg2.IntegrityError:
         # in case pf key violation
@@ -121,8 +121,10 @@ def update_single_order_table(fields, config_parameters):
         UPDATE bot_orders_tbl
             SET order_status = %s, 
                 order_trades = %s, 
-                order_quantity_filled = %s
-            WHERE bot_id = %s AND order_id = %s
+                order_quantity_filled = %s,
+                order_price_filled = %s,
+                order_fee = %s
+            WHERE order_bot_id = %s AND order_exchange_trade_id = %s
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
