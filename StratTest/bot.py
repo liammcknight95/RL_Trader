@@ -8,10 +8,15 @@ import config
 import uuid
 import json
 import signal, sys, os
+import pytz
+import math
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
 # engine and make sure there's no gaps
 # TODO using order ID now, check if I can make use of transaction id
+# TODO should number of fetched bars be an input to be optimized based on the strategy look back period
+# NOTE 1 minute bar problematic, does not return minute before last
+# note exchange bars seem to be a bit slow to refresh. a new 5 min bar would start with close px of 2 bars above
 print('##### bot.py', os.getpid())
 
 class TradingBot():
@@ -52,10 +57,12 @@ class TradingBot():
         self.signal_time = pd.Timestamp(datetime.now()) # initiate signal time, updated throughout bot lif
         self.owned_ccy_size = owned_ccy_size
         self.sl_price = None
+        self.bars_df = pd.DataFrame()
 
         self.logger = logging.getLogger('Trading Bot')
         self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
         self._db_new_bot() # add new bot to database
+        
 
 
     def _db_new_bot(self):
@@ -172,7 +179,7 @@ class TradingBot():
     def _db_new_bar(self, bar):
         ''' bar: pd.Series containing strategy latest pulled data and indicator '''
 
-        bar_record_timestamp = datetime.now().isoformat()
+        bar_record_timestamp = self.bars_fetched_at_timestamp.isoformat()
         bar_bar_time = bar['timestamp']
         bar_open = bar['open']
         bar_high = bar['high']
@@ -202,6 +209,58 @@ class TradingBot():
         # create new orderbook record
         db_update.insert_order_book_bars_table(fields, self.db_config_parameters)
 
+    @staticmethod
+    def _clean_bars_response(bars):
+        ''' Convert bars api response into a dataframe, sort it and handle timestamp conversion '''
+
+        df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']).sort_values(by='timestamp')
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df['timestamp'] = df['timestamp'].dt.tz_localize('utc').dt.tz_convert('Europe/London') # localize to utc and then convert to London tz
+        df = df.set_index('timestamp')
+        return df
+
+
+    def fetch_bars(self):
+        ''' Check existing bars dataframe against latest pulled data and update only the essential part of it '''
+
+        if self.bars_df.shape[0] == 0: # initial fetch
+
+            bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=300) # most recent candle keeps evolving
+            self.bars_df = self._clean_bars_response(bars)
+            self.bars_fetched_at_timestamp = datetime.now() # used for database, logging and df delta checks
+            self.logger.info(f"Succesfully fetched initial {300} bars at {self.bars_fetched_at_timestamp.isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
+            print(f'Initial df update, fetching {300} bars')
+            print(self.bars_df.tail())
+
+        else: # fetch deltas to minimize data called via api
+
+            # working out how many bars to fetch
+            bar_fetching_time = pd.to_datetime(datetime.now().astimezone(pytz.timezone('Europe/London')))
+            last_existing_bar_time = self.bars_df.index.max()
+            minutes_since_last_bar = (bar_fetching_time - last_existing_bar_time).seconds / 60 # elapsed time since last fetched bar
+            
+            freq_in_minutes = int(self.frequency .replace('m', '')) # translate minute frequency into integer numbeer of minutes
+
+            # number of new bars to fetch: if 1 is current bar refreshed, if 2 means that new bar has started
+            limit_bars_fetch = math.ceil(minutes_since_last_bar / freq_in_minutes) # ceil rounds up the number of bars to fetch
+            delta_bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=limit_bars_fetch)
+            self.bars_fetched_at_timestamp = datetime.now()
+            self.logger.info(f"Succesfully fetched {limit_bars_fetch} delta bars")
+            
+            print(f"delta updated, fetched {limit_bars_fetch} bars")
+            delta_bars_df = self._clean_bars_response(delta_bars)
+
+            # replace dataframe part re-fetched
+            self.bars_df = self.bars_df.loc[~(self.bars_df.index.isin(delta_bars_df.index))] # drop old rows
+            self.bars_df = pd.concat([self.bars_df, delta_bars_df], axis=0) # append new ones
+            print(self.bars_df.tail())
+
+            if limit_bars_fetch > 1: 
+                print('in limit_bars_fetch > 1')
+                # means that more than 1 bar has been fetched, either new bar or bot fell behind
+                self.bars_df = self.bars_df.iloc[limit_bars_fetch-1: , :] # drop top dataframe rows 1 in excess of limit_bars_fetch
+                print(self.bars_df.tail())
+            
 
     def _db_new_health_status(self, health_status, err):
 
@@ -396,31 +455,25 @@ class TradingBot():
         ''' Method that runs the trading bot - to be wrapped inside a scheduler '''
 
         try:
-
-            bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=250) # most recent candle keeps evolving
-            self.bars_df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            self.bars_df['timestamp'] = pd.to_datetime(self.bars_df['timestamp'], unit='ms')
-            self.bars_df = self.bars_df.set_index('timestamp')
-            self.logger.info(f"Succesfully fetched bars at {datetime.now().isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
-
-            # update bars record on database
+            # fetching initial bars or just the delta/missing ones
+            self.fetch_bars()
 
             # generate signal - updates self.bars_df
             self._get_crossover()
             
             # generate orders based on signal
             self._check_buy_sell_signals()
-
-            print(self.bars_df.reset_index().iloc[-1])
+            
+            # update bars record on database - reset index helps handing timestamp in _db_new_bar
             self._db_new_bar(self.bars_df.reset_index().iloc[-1]) # here in order to also add info about the indicator and stop losses
-            # reset index helps handing timestamp in _db_new_bar
 
             self.logger.info('#####')
 
             self._db_new_health_status('UP', '') # adding new bot status
         
         except Exception as err:
-            self._db_new_health_status('MALF', str(err)[:100])
+            print('Bot malfunctioned')
+            self._db_new_health_status('MALF', str(err)) # [:100]
             self.end_of_bot_time = datetime.now().isoformat()
             self.logger.critical(f"Bot malfunctioned at {self.end_of_bot_time}", exc_info=True)
             self.logger.info('#####')
