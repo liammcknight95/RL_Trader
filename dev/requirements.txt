@@ -1,0 +1,11 @@
+#### requirements without version ####
+
+#### requireents with version ####
+ccxt == 1.59.66
+numpy == 1.22.2
+pandas == 1.2.1
+plotly == 5.6.0
+plotly-express == 0.4.1
+psycopg2-binary == 2.9.3
+schedule == 1.1.0
+ta == 0.7.0

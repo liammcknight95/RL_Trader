@@ -17,6 +17,8 @@ import math
 # TODO should number of fetched bars be an input to be optimized based on the strategy look back period
 # NOTE 1 minute bar problematic, does not return minute before last
 # note exchange bars seem to be a bit slow to refresh. a new 5 min bar would start with close px of 2 bars above
+# this is happening cause, similarly to 1 minute, it does not return the penultimate bar immediately
+## TODO check why new trade not generate immediately at the start of the trading bot - engine ###
 print('##### bot.py', os.getpid())
 
 class TradingBot():
@@ -44,7 +46,7 @@ class TradingBot():
         self.exchange.set_sandbox_mode(sandbox)
 
         ## Database connectivity
-        self.db_config_parameters = config.pg_db_configuration(location='local')
+        self.db_config_parameters = config.pg_db_configuration()
 
         self.pair = pair
         self.strategy = strategy

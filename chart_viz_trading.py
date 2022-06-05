@@ -85,7 +85,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, st
         # p_id = data[deleted_bot_unique_id][0]
 
         # get program id using bot_id from - button id contains bot id that is used in database
-        delete_bot_df = db_update.select_single_bot(config.pg_db_configuration(location='local'), bot_id=deleted_bot_unique_id)
+        delete_bot_df = db_update.select_single_bot(config.pg_db_configuration(), bot_id=deleted_bot_unique_id)
         delete_bot_df_pid = delete_bot_df['bot_script_pid'].values[0]
 
         try:
@@ -111,7 +111,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, st
 def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bots_list):
 
     live_bots_ui_children = []
-    active_bots_df = db_update.select_all_active_bots(config.pg_db_configuration(location='local'))
+    active_bots_df = db_update.select_all_active_bots(config.pg_db_configuration())
     bot_ids = active_bots_df['bot_id']
 
     for bot_id in bot_ids:
