@@ -1,5 +1,5 @@
 #### requirements without version ####
-
+docker
 #### requireents with version ####
 ccxt == 1.59.66
 numpy == 1.22.2
