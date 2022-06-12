@@ -1,6 +1,6 @@
 import dash_bootstrap_components as dbc
 from dash import dcc, html
-from chart_viz_config import strategies, currencies, frequencies
+from chart_viz_config import ccxt_exchanges, strategies, currencies, currencies_mapping, frequencies
 
 ### RUNNING BOTS
 def new_bot_info(bot_id):
@@ -39,7 +39,7 @@ running_bots_ui = dbc.Card(
 
         dcc.Interval(
             id="trading-live-bots-interval-refresh",
-            interval=1*2000, # in milliseconds
+            interval=1*5000, # in milliseconds
             n_intervals=0
         ),
 
@@ -62,6 +62,26 @@ new_bot_ui = dbc.Card(
             )
         ),
 
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        dbc.Label("Exchange"),
+                        dcc.Dropdown(
+                            id="trading-ccxt-exchanges",
+                            options=[
+                                {"label": exch, "value": exch} for exch in ccxt_exchanges
+                            ],
+                            value="Bitstamp",
+                            multi=False,
+                            persistence=True
+                        ),
+                    ],
+                    width=6
+                ),
+            ]
+        ),
+
         html.Br(),
 
         dbc.Row(
@@ -71,10 +91,6 @@ new_bot_ui = dbc.Card(
                         dbc.Label("Pair"),
                         dcc.Dropdown(
                             id="trading-ccy-pairs",
-                            options=[
-                                {"label": cur, "value": cur} for cur in currencies
-                            ],
-                            value=["USDT_BTC"],
                             multi=False,
                             persistence=True
                         ),
