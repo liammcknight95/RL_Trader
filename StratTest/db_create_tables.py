@@ -16,7 +16,9 @@ def create_tables(config_parameters):
                 bot_stop_loss_type VARCHAR(30),
                 bot_freq VARCHAR(30) NOT NULL,
                 bot_exchange VARCHAR(30) NOT NULL,
-                bot_script_pid INTEGER NOT NULL
+                bot_script_pid INTEGER NOT NULL,
+                bot_container_id VARCHAR,
+                bot_container_name VARCHAR
         )
         """,
         """ 

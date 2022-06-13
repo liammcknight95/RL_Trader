@@ -51,7 +51,7 @@ def new_container(client, fun_bot_name):
     Input({'type': 'trading-bot-btn-liquidate', 'index': ALL}, "n_clicks"),
     State("trading-ccy-pairs", "value"),
     State("trading-bot-strategy", "value"),
-    State("trading-store-freqs", "value"),
+    State("trading-bot-freqs", "value"),
     State("trading-bot-stop-loss", "value"),
     State("bot-strategy-param-1", "value"),
     State("bot-strategy-param-2", "value"),
@@ -66,27 +66,27 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, st
     # if a new bot is being created
     if ctx_id.split('.')[0] == "trading-new-bot":
 
-        # launch the new bot
-        script_path = os.path.join(bot_script_path, "run_bot.py") # run_mock_script
-
         # spin up a new bot
         # new container
         client = docker.from_env() # docker client
         container_obj = new_container(client, random.choice(fun_bot_names)) # ui name for bot returned
         fun_bot_name = container_obj.name
+        fun_bot_id = container_obj.id
+        print(fun_bot_name, fun_bot_id)
 
-        # time.sleep(1)
         command_list = [
             "python3", 
             os.path.join(bot_script_path, "run_bot.py"), # run_mock_script
-            "--pair", f"{pair}", # TODO check if exchange and app/data processing are using same convention
+            "--pair", f"{pair}",
             "--strategy", f"{strategy}",
             "--frequency", f"{frequency}",
             "--sl_type", "trailing", # TODO make this dynamic from UI?
             "--sl_pctg", f"{sl_bps/10000}", # from bps to pctg
             "--owned_ccy_size", f"{33}", # TODO make dynamic from ui
             "--short_ema", f"{strategy_param_1}", # bot ui element strategy 1
-            "--long_ema", f"{strategy_param_2}" # bot ui element strategy 2
+            "--long_ema", f"{strategy_param_2}", # bot ui element strategy 2
+            "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
+            "--cntr_name", f"{fun_bot_name}"# container name where bot is running - not unique
         ]
         exec_results = container_obj.exec_run(
             cmd=command_list,
@@ -94,28 +94,31 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, st
             tty=True, # -t
             detach=True # return exec results
         )
-        # Script id: {p.pid}
-        # time.sleep(1)
-        print('here')
-        message = f"CREATED new {pair[0]} Bot at {datetime.now().isoformat()}. . Name:{fun_bot_name}"
+
+        message = f"CREATED new {pair}, exec results: {exec_results}, Bot at {datetime.now().isoformat()}. . Name:{fun_bot_name}"
         
     # if a bot is being deleted - ie a btn liquidate has actually been clicked
     elif "trading-bot-btn-liquidate" in ctx_id.split('.')[0] and ctx_value is not None:
         
-        # liquidate the targeted bot
-        deleted_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
-        print("in liquidate bot block", deleted_bot_unique_id)
-
-        # get program id using bot_id from - button id contains bot id that is used in database
-        delete_bot_df = db_update.select_single_bot(config.pg_db_configuration(), bot_id=deleted_bot_unique_id)
-        delete_bot_df_pid = delete_bot_df['bot_script_pid'].values[0]
-
         try:
-            os.kill(int(delete_bot_df_pid), signal.SIGINT) # simulates KeyboardInterrupt
-            message = f"DELETED Bot at {datetime.now().isoformat()}. PID: {delete_bot_df_pid}. Unique id: {deleted_bot_unique_id}"
+            # liquidate the targeted bot
+            deleted_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
+            print("in liquidate bot block", deleted_bot_unique_id)
+
+            # get program id and container id using bot_id from - button id contains bot id that is used in database
+            delete_bot_df = db_update.select_single_bot(config.pg_db_configuration(), bot_id=deleted_bot_unique_id)
+            delete_bot_df_pid, delete_bot_container_id, bot_container_name = delete_bot_df["bot_script_pid"].values[0], delete_bot_df["bot_container_id"].values[0], delete_bot_df["bot_container_name"].values[0]
+            print("container id: ", delete_bot_container_id, "pid: ", delete_bot_df_pid)
+            # get a container object, execture program to kill bot process and finally kill container
+            client = docker.from_env() # docker client
+            delete_bot_container_obj = client.containers.get(delete_bot_container_id)
+            delete_bot_container_obj.exec_run(f"kill -SIGINT {delete_bot_df_pid}") # simulates KeyboardInterrupt
+            delete_bot_container_obj.kill()
+
+            message = f"DELETED Bot at {datetime.now().isoformat()}. NAME: {bot_container_name} PID: {delete_bot_df_pid}  Unique id: {deleted_bot_unique_id}" 
 
         except Exception as e:
-            message = f"TRIED to delete Bot at {datetime.now().isoformat()}. {e}. PID: {delete_bot_df_pid}.  Unique id: {deleted_bot_unique_id}"   
+            message = f"TRIED to delete Bot at {datetime.now().isoformat()}. {e}. NAME: {bot_container_name} PID: {delete_bot_df_pid}  Unique id: {deleted_bot_unique_id}"   
         
     else:
         message = 'No action performed'
@@ -134,21 +137,30 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
 
     live_bots_ui_children = []
     active_bots_df = db_update.select_all_active_bots(config.pg_db_configuration())
-    bot_ids = active_bots_df['bot_id']
+    active_bots_df["bot_description"] = active_bots_df["bot_container_name"].astype(str) + \
+    ": " + active_bots_df["bot_exchange"] + \
+    " - " + active_bots_df["bot_pair"] + \
+    " - " + active_bots_df["bot_owned_ccy_start_position"].astype(str) + \
+    " - " + active_bots_df["bot_strategy"] + \
+    " - " + active_bots_df["bot_freq"] + \
+    " - " + active_bots_df["bot_stop_loss_pctg"].astype(str)
 
-    for bot_id in bot_ids:
-        live_bots_ui_children.append(new_bot_info(bot_id))
+    bot_ids = active_bots_df["bot_id"].to_list()
+    bot_descriptions = active_bots_df["bot_description"].to_list()
+
+    for bot_id, bot_description in zip(bot_ids, bot_descriptions):
+        live_bots_ui_children.append(new_bot_info(bot_id, bot_description))
 
     if str(live_bots_ui_children) == existing_bots_list:
-        print('NO UPDATE')
+        print("NO UPDATE")
         return no_update, no_update
 
     else:
-        print('UI UPDATED')
+        print("UI UPDATED")
         existing_bots_list = str(live_bots_ui_children) # assign same value
 
         # print(str(live_bots_ui_children))
-        # print('(###)')
+        # print("(###)")
         # print(existing_bots_list)
         return live_bots_ui_children, existing_bots_list
 
@@ -190,7 +202,7 @@ def display_exchange_symbols(exchange):
         options=[
             {"label": cur, "value": cur} for cur in currencies_mapping[exchange].values()
         ]
-        value=[options[0]["value"]] # first option as default
+        value=options[0]["value"] # first option as default
         return options, value
     else:
         raise PreventUpdate

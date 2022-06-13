@@ -3,12 +3,12 @@ from dash import dcc, html
 from chart_viz_config import ccxt_exchanges, strategies, currencies, currencies_mapping, frequencies
 
 ### RUNNING BOTS
-def new_bot_info(bot_id):
+def new_bot_info(bot_id, bot_description):
     ''' Dynamically create a new ui element every time a bot spins up or is deleted '''
     return dbc.Row(
         [
             dbc.Col(
-                html.P(bot_id, id={"type":"trading-bot-info", "index":bot_id}),
+                html.P(bot_description, id={"type":"trading-bot-info", "index":bot_id}),
                 width=10
             ),
 
@@ -108,12 +108,12 @@ new_bot_ui = dbc.Card(
                     [
                         dbc.Label("Frequency"),
                         dcc.Dropdown(
-                            id="trading-store-freqs",
+                            id="trading-bot-freqs",
                             className="dark-dd-border",
                             options=[
-                                {"label": freq, "value": freq} for freq in frequencies
+                                {"label": freq, "value": freq[:-2]} for freq in frequencies # drop "in" of "min": ie 30m
                             ],
-                            value="30min",
+                            value="30m",
                             multi=False,
                             persistence=True
                         ),

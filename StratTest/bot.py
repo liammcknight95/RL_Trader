@@ -23,7 +23,7 @@ print('##### bot.py', os.getpid())
 
 class TradingBot():
 
-    def __init__(self, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, sandbox=True, **params):
+    def __init__(self, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, container_id, container_name, sandbox=True, **params):
         ''' 
             pair: str - currency pair the bot is trading
             strategy: str - 
@@ -59,6 +59,8 @@ class TradingBot():
         self.signal_time = pd.Timestamp(datetime.now()) # initiate signal time, updated throughout bot lif
         self.owned_ccy_size = owned_ccy_size
         self.sl_price = None
+        self.container_id = container_id
+        self.container_name = container_name
         self.bars_df = pd.DataFrame()
 
         self.logger = logging.getLogger('Trading Bot')
@@ -90,7 +92,9 @@ class TradingBot():
             self.sl_type,
             self.frequency,
             bot_exchange,
-            self.script_pid
+            self.script_pid,
+            self.container_id,
+            self.container_name
         ]
         # create new database record
         db_update.insert_bots_table(fields, self.db_config_parameters)

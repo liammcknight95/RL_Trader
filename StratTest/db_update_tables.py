@@ -49,9 +49,11 @@ def insert_bots_table(fields, config_parameters):
             bot_stop_loss_type,
             bot_freq,
             bot_exchange,
-            bot_script_pid
+            bot_script_pid,
+            bot_container_id,
+            bot_container_name
         ) 
-        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
