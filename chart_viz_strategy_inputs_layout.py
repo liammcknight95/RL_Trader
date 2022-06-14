@@ -21,13 +21,10 @@ def dynamic_strategy_controls(strategy, input_type):
                             value=15,
                             persistence=True
                         ),
-                        ]
-                    )
-                ]
-            ),
+                        ],
+                        width=6
+                    ),
 
-            dbc.Row(
-                [
                     dbc.Col(
                         [
                         dbc.Label("Long EMA"),
@@ -39,10 +36,12 @@ def dynamic_strategy_controls(strategy, input_type):
                             value=30,
                             persistence=True
                         ),
-                        ]
+                        ],
+                        width=6
                     )
                 ]
             ),
+
         ]
 
     elif strategy == 'BollingerBandsLO':
@@ -60,16 +59,12 @@ def dynamic_strategy_controls(strategy, input_type):
                             value=15,
                             persistence=True
                         ),
-                        ]
-                    )
-                ]
-            ),
-
-            dbc.Row(
-                [
+                        ],
+                        width=6
+                    ),
                     dbc.Col(
                         [
-                        dbc.Label("Standard deviation factor"),
+                        dbc.Label("STD factor"),
                         dbc.Input(
                             id=f"{input_type}-strategy-param-2", 
                             type="number", 
@@ -78,7 +73,8 @@ def dynamic_strategy_controls(strategy, input_type):
                             value=1,
                             persistence=True
                         ),
-                        ]
+                        ],
+                        width=6
                     )
                 ]
             ),

@@ -50,14 +50,16 @@ def new_container(client, fun_bot_name):
     Input("trading-new-bot", "n_clicks"),
     Input({'type': 'trading-bot-btn-liquidate', 'index': ALL}, "n_clicks"),
     State("trading-ccy-pairs", "value"),
+    State("trading-owned-ccy-size", "value"),
     State("trading-bot-strategy", "value"),
     State("trading-bot-freqs", "value"),
-    State("trading-bot-stop-loss", "value"),
+    State("trading-bot-stop-loss-bps", "value"),
+    State("trading-bot-stop-loss-type", "value"),
     State("bot-strategy-param-1", "value"),
     State("bot-strategy-param-2", "value"),
     prevent_initial_call=True
 )
-def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, strategy, frequency, sl_bps, strategy_param_1, strategy_param_2):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, owned_ccy_size, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -80,9 +82,9 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, st
             "--pair", f"{pair}",
             "--strategy", f"{strategy}",
             "--frequency", f"{frequency}",
-            "--sl_type", "trailing", # TODO make this dynamic from UI?
+            "--sl_type", f"{sl_type}", # TODO make this dynamic from UI?
             "--sl_pctg", f"{sl_bps/10000}", # from bps to pctg
-            "--owned_ccy_size", f"{33}", # TODO make dynamic from ui
+            "--owned_ccy_size", f"{owned_ccy_size}", # TODO make dynamic from ui
             "--short_ema", f"{strategy_param_1}", # bot ui element strategy 1
             "--long_ema", f"{strategy_param_2}", # bot ui element strategy 2
             "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
@@ -121,7 +123,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, st
             message = f"TRIED to delete Bot at {datetime.now().isoformat()}. {e}. NAME: {bot_container_name} PID: {delete_bot_df_pid}  Unique id: {deleted_bot_unique_id}"   
         
     else:
-        message = 'No action performed'
+        message = "No action performed"
 
     return message
 
@@ -215,5 +217,5 @@ def display_exchange_symbols(exchange):
     Input("trading-bot-strategy", "value")
 )
 def display_strategy_parameters(strategy):
-    elements = dbc.Col([dbc.Label("Strategy parameters")]+ dynamic_strategy_controls(strategy, "bot"))
+    elements = dbc.Col(dynamic_strategy_controls(strategy, "bot"))
     return elements

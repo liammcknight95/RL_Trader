@@ -49,7 +49,8 @@ running_bots_ui = dbc.Card(
         ),
 
     ],
-    body=True
+    body=True,
+    className='h-100'
 )
 
 ### NEW BOTS
@@ -61,6 +62,8 @@ new_bot_ui = dbc.Card(
                 style={"text-align":"center"}
             )
         ),
+
+        html.Br(),
 
         dbc.Row(
             [
@@ -79,6 +82,24 @@ new_bot_ui = dbc.Card(
                     ],
                     width=6
                 ),
+
+                dbc.Col(
+                    [
+                        dbc.Label("Frequency"),
+                        dcc.Dropdown(
+                            id="trading-bot-freqs",
+                            className="dark-dd-border",
+                            options=[
+                                {"label": freq, "value": freq[:-2]} for freq in frequencies # drop "in" of "min": ie 30m
+                            ],
+                            value="30m",
+                            multi=False,
+                            persistence=True
+                        ),
+                    ],
+                    width=6
+                ),
+
             ]
         ),
 
@@ -97,8 +118,26 @@ new_bot_ui = dbc.Card(
                     ],
                     width=6
                 ),
+
+                dbc.Col(
+                    [
+                        dbc.Label("Owned Amount"),
+                        dbc.Input(
+                                id="trading-owned-ccy-size", 
+                                type="number", 
+                                min=0, 
+                                max=10000, 
+                                step=0.000001,
+                                value=0,
+                                persistence=True
+                        ),
+                    ],
+                    width=6
+                ),
+
             ]
         ),
+
 
         html.Br(),
 
@@ -106,14 +145,27 @@ new_bot_ui = dbc.Card(
             [
                 dbc.Col(
                     [
-                        dbc.Label("Frequency"),
+                        dbc.Label("Stop Loss Bps"),
+                        dbc.Input(
+                            id="trading-bot-stop-loss-bps", 
+                            type="number", 
+                            min=0, 
+                            max=10000, 
+                            value=0,
+                            persistence=True
+                    ),
+                    ],
+                ),  
+                dbc.Col(
+                    [
+                        dbc.Label("Stop Loss Type"),
                         dcc.Dropdown(
-                            id="trading-bot-freqs",
+                            id="trading-bot-stop-loss-type",
                             className="dark-dd-border",
                             options=[
-                                {"label": freq, "value": freq[:-2]} for freq in frequencies # drop "in" of "min": ie 30m
+                                {"label": sl_type, "value": sl_type} for sl_type in ["static", "trailing"]
                             ],
-                            value="30m",
+                            value="trailing",
                             multi=False,
                             persistence=True
                         ),
@@ -124,11 +176,12 @@ new_bot_ui = dbc.Card(
         ),
 
         html.Br(),
+        html.Br(),
 
         dbc.Row(
             dbc.Col(
                 [
-                    dbc.Label("Strategy"),
+                    dbc.Label("Strategy Type & Parameters"),
                     dcc.Dropdown(
                         id="trading-bot-strategy",
                         options=[
@@ -138,27 +191,8 @@ new_bot_ui = dbc.Card(
                         persistence=True
                     ),
                 ],
+                width=6
             )
-        ),
-
-        html.Br(),
-
-        dbc.Row(
-            [
-                dbc.Col(
-                    [
-                        dbc.Label("Stop Loss"),
-                        dbc.Input(
-                            id="trading-bot-stop-loss", 
-                            type="number", 
-                            min=0, 
-                            max=10000, 
-                            value=0,
-                            persistence=True
-                    ),
-                    ],
-                ),  
-            ]
         ),
 
         html.Br(),
@@ -191,7 +225,8 @@ new_bot_ui = dbc.Card(
 
 
     ],
-    body=True
+    body=True,
+    className='h-100'
 )
 
 ### BALANCES
@@ -242,7 +277,8 @@ current_balances_ui = dbc.Card(
             id="trading-non-zero-balances-total-list"
         )
     ],
-    body=True
+    body=True,
+    className='h-100'
 )
 
 
