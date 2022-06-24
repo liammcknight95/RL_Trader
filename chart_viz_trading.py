@@ -1,4 +1,4 @@
-from dash import Input, Output, State, callback, no_update, callback_context, MATCH, ALL
+from dash import html, Input, Output, State, callback, no_update, callback_context, MATCH, ALL
 from dash.exceptions import PreventUpdate
 from datetime import datetime
 import os, signal, uuid
@@ -138,7 +138,8 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, ow
 def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bots_list):
 
     live_bots_ui_children = []
-    active_bots_df = db_update.select_all_active_bots(config.pg_db_configuration())
+    active_bots_df = db_update.select_active_bots_status(config.pg_db_configuration())
+
     active_bots_df["bot_description"] = active_bots_df["bot_container_name"].astype(str) + \
     ": " + active_bots_df["bot_exchange"] + \
     " - " + active_bots_df["bot_pair"] + \
@@ -147,11 +148,18 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
     " - " + active_bots_df["bot_freq"] + \
     " - " + active_bots_df["bot_stop_loss_pctg"].astype(str)
 
+    active_bots_df["bot_last_status"] = "Last updated at " + active_bots_df["last_update"].astype(str) + \
+        " - Status: " + active_bots_df["health_status"] + \
+        "  " + active_bots_df["health_status_error"].astype(str)
+
     bot_ids = active_bots_df["bot_id"].to_list()
     bot_descriptions = active_bots_df["bot_description"].to_list()
+    bot_statuses = active_bots_df["bot_last_status"].to_list()
 
-    for bot_id, bot_description in zip(bot_ids, bot_descriptions):
-        live_bots_ui_children.append(new_bot_info(bot_id, bot_description))
+    for bot_id, bot_description, bot_status in zip(bot_ids, bot_descriptions, bot_statuses):
+        live_bots_ui_children.append(new_bot_info(bot_id, bot_description, bot_status))
+        live_bots_ui_children.append(html.P(''))
+        
 
     if str(live_bots_ui_children) == existing_bots_list:
         print("NO UPDATE")

@@ -229,6 +229,45 @@ def select_all_active_bots(config_parameters):
     return data
 
 
+def select_active_bots_status(config_parameters):
+    ''' query that selects all active bots grouped by health status, to flag 
+        last valid update as well as any malfunctioning '''
+
+    sql = ''' 
+        SELECT 
+            bots.bot_id,
+            bots.bot_container_name,
+            bots.bot_exchange,
+            bots.bot_pair,
+            bots.bot_owned_ccy_start_position,
+            bots.bot_strategy,
+            bots.bot_freq,
+            bots.bot_stop_loss_pctg,
+			health.health_status,
+			health.health_status_error,
+			health.last_update
+        FROM bot_bots_tbl as bots
+			LEFT JOIN (
+				SELECT    
+					health_status_bot_id,
+					health_status,
+            		health_status_error,
+					MAX(health_status_timestamp) as last_update
+				FROM
+					bot_health_status_tbl
+				GROUP BY
+					health_status_bot_id,
+					health_status,
+            		health_status_error				
+			) health ON health.health_status_bot_id = bots.bot_id
+        WHERE 
+            bots.bot_end_date is Null
+    '''
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data
+
 # TODO update existing order:
 # update if partially or totally filled - amount
 # update if cancelled - status

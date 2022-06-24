@@ -3,20 +3,40 @@ from dash import dcc, html
 from chart_viz_config import ccxt_exchanges, strategies, currencies, currencies_mapping, frequencies
 
 ### RUNNING BOTS
-def new_bot_info(bot_id, bot_description):
+def new_bot_info(bot_id, bot_description, bot_status):
     ''' Dynamically create a new ui element every time a bot spins up or is deleted '''
-    return dbc.Row(
+    return dbc.Col(
         [
-            dbc.Col(
-                html.P(bot_description, id={"type":"trading-bot-info", "index":bot_id}),
-                width=10
+    
+            dbc.Row(
+                [
+                    dbc.Col(
+                        html.P(bot_description, id={"type":"trading-bot-info", "index":bot_id}),
+                        width=10
+                    ),
+
+                    dbc.Col(
+                        dbc.Button('Liquidate', id={"type":"trading-bot-btn-liquidate", "index":bot_id}, color='danger'),
+                        width=2
+                    )
+                ]
             ),
 
-            dbc.Col(
-                dbc.Button('Liquidate', id={"type":"trading-bot-btn-liquidate", "index":bot_id}, color='danger'),
-                width=2
+            dbc.Row(
+                [
+                    dbc.Col(
+                        html.P(bot_status, id={"type":"trading-bot-status", "index":bot_id}),
+                        width=10
+                    ),
+                ]
             )
-        ]
+        ],
+        width=12,
+        style={
+            "backgroundColor":"#444", 
+            "paddingTop":"15px",
+
+        }
     )
 
 running_bots_ui = dbc.Card(
@@ -295,12 +315,12 @@ trading_page_layout = dbc.Container(
 
                 dbc.Col(
                     running_bots_ui,
-                    width=4
+                    width=6
                 ),
 
                 dbc.Col(
                     current_balances_ui,
-                    width=4
+                    width=2
                 )
 
             ]

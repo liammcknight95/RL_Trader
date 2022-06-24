@@ -74,3 +74,10 @@ input[type="number"] {
     background-color: #444;
 }
 */
+
+/*  Custom style for stats text boxes */
+.stats-styling {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 25px;
+    font-weight: bolder;
+}
