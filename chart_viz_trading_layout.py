@@ -199,20 +199,37 @@ new_bot_ui = dbc.Card(
         html.Br(),
 
         dbc.Row(
-            dbc.Col(
-                [
-                    dbc.Label("Strategy Type & Parameters"),
-                    dcc.Dropdown(
-                        id="trading-bot-strategy",
-                        options=[
-                            {"label": col, "value": col} for col in strategies.keys()
-                        ],
-                        value="BollingerBandsLO",
-                        persistence=True
-                    ),
-                ],
-                width=6
-            )
+            [
+                dbc.Col(
+                    [
+                        dbc.Label("Strategy Type & Parameters"),
+                        dcc.Dropdown(
+                            id="trading-bot-strategy",
+                            options=[
+                                {"label": col, "value": col} for col in strategies.keys()
+                            ],
+                            value="BollingerBandsLO",
+                            persistence=True
+                        ),
+                    ],
+                    width=6
+                ),
+                dbc.Col(
+                    [
+                        dbc.Label("Opening Position - On Signal"),
+                        dcc.RadioItems(
+                            ["Current", "Next"],
+                            "Current",
+                            id="trading-bot-opening-position",
+                            inline=True,
+                            persistence=True,
+                            inputStyle={"marginRight": "3px"},
+                            labelStyle={"marginRight": "15px"}
+                        )
+                    ],
+                    width=6
+                ),
+            ]
         ),
 
         html.Br(),

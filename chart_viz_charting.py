@@ -23,7 +23,7 @@ def dynamic_start_end_dates(container_refresh):
     max_date = datetime.today().date()
     initial_viz_month = datetime.today() - timedelta(90)
     start_date = datetime.today().date()- timedelta(90)
-    end_date = datetime.today().date() - timedelta(1)
+    end_date = datetime.today().date()# - timedelta(1)
     # end_date = pd.to_datetime('2022-01-20').date()
     return max_date, initial_viz_month, start_date, end_date
 

@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from StratTest.engine import TradingStrategy
 from StratTest import db_update_tables as db_update
+import numpy as np
 import pandas as pd
 import ccxt
 import config
@@ -23,7 +24,7 @@ print('##### bot.py', os.getpid())
 
 class TradingBot():
 
-    def __init__(self, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, container_id, container_name, sandbox=True, **params):
+    def __init__(self, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, opening_position, container_id, container_name, sandbox=True, **params):
         ''' 
             pair: str - currency pair the bot is trading
             strategy: str - 
@@ -33,40 +34,67 @@ class TradingBot():
             owned_ccy_size: float - amount of owned currency to be traded on a single order
         '''
 
-        self.script_pid = os.getpid()# script program di
-        print('##### inside class bot.py', os.getpid())
-
-        ## Exchange connectivity
-        self.exchange = ccxt.bitstamp(
-            {
-                'apiKey': config.BITSTAMP_API_KEY,
-                'secret': config.BITSTAMP_API_SECRET
-            }
-        )
-        self.exchange.set_sandbox_mode(sandbox)
-
-        ## Database connectivity
-        self.db_config_parameters = config.pg_db_configuration()
-
-        self.pair = pair
-        self.strategy = strategy
-        # self.indicator = indicator
-        self.frequency = frequency
-        self.sl_type = sl_type
-        self.sl_pctg = sl_pctg
-        self.params = params
-        self.in_position = False
-        self.signal_time = pd.Timestamp(datetime.now()) # initiate signal time, updated throughout bot lif
-        self.owned_ccy_size = owned_ccy_size
-        self.sl_price = None
-        self.container_id = container_id
-        self.container_name = container_name
-        self.bars_df = pd.DataFrame()
-
         self.logger = logging.getLogger('Trading Bot')
-        self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
-        self._db_new_bot() # add new bot to database
-        
+
+        try:
+            self.script_pid = os.getpid()# script program di
+            print('##### inside class bot.py', os.getpid())
+
+            ## Exchange connectivity
+            self.exchange = ccxt.bitstamp(
+                {
+                    'apiKey': config.BITSTAMP_API_KEY,
+                    'secret': config.BITSTAMP_API_SECRET
+                }
+            )
+            self.exchange.set_sandbox_mode(sandbox)
+
+            ## Database connectivity
+            self.db_config_parameters = config.pg_db_configuration()
+
+            self.pair = pair
+            self.strategy = strategy
+            # self.indicator = indicator
+            self.frequency = frequency
+            self.sl_type = sl_type
+            self.sl_pctg = sl_pctg
+            self.params = params
+            self.in_position = False
+            self.signal_time = pd.Timestamp(datetime.now()) # initiate signal time, updated throughout bot lif
+            self.owned_ccy_size = owned_ccy_size
+            self.opening_position = opening_position
+            self.sl_price = None
+            self.container_id = container_id
+            self.container_name = container_name
+            self.bars_df = pd.DataFrame()
+            self._db_new_bot() # add new bot to database and define self.bot_id      
+            
+
+            # opening position on instanciation
+            if self.opening_position == 'Current':
+                ''' If Current is selected, try to place an order when bot is instanciated. Only condition to be checked
+                    is that the strategy last bar has a valid signal (ie not waiting for next bar confirmation)'''
+                
+                self.fetch_bars() # get bars
+                initial_bars_df = self._get_crossover().reset_index() # generate signal - updates self.bars_df
+
+                current_period = initial_bars_df.index[-1]
+                if initial_bars_df.loc[current_period][f'{self.strategy}_signal']==1:
+
+                    self.create_new_order()
+
+                    self.in_position = True
+                    self.signal_time = initial_bars_df.loc[current_period]['timestamp']
+
+                    self._db_new_order(self.buy_order) # adding new order to database
+                    self.logger.info(f"----- Opening BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
+
+                else: self.logger.info(f"No Opening order placed, resuming normal bot activity")
+
+            self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
+
+        except Exception as e:
+            self.logger.error(f"Bot instanciation failed due to: {e}")
 
 
     def _db_new_bot(self):
@@ -113,17 +141,17 @@ class TradingBot():
 
     def _db_new_order(self, order):
         order_id = 'order-' + str(uuid.uuid4())
-        order_timestamp_placed = order['datetime']
+        order_timestamp_placed = pd.to_datetime(order['datetime']).tz_convert('Europe/London') # TODO have timezone in configuration
         order_price_placed = order['price']
         order_quantity_placed = order['amount']
         order_direction = order['side']
         order_exchange_type = order['type']
         if order['filled'] == 0:
             order_status = 'dormant'
-        elif order['filled'] < order['amount']:
-            order_status = 'partialled'
-        else:
+        elif np.isclose(order['filled'], order['amount']): # isclose for float comparison
             order_status = 'filled'
+        else:
+            order_status = 'partialled'
         order_ob_bid_price = self.top_bid_px
         order_ob_ask_price = self.top_ask_px
         order_ob_bid_size = self.top_bid_quantity
@@ -158,15 +186,38 @@ class TradingBot():
         db_update.insert_orders_table(fields, self.db_config_parameters)
 
 
-    def _db_update_order(self, order_exchange_trade_id, order_checked):
-        ''' updated orders in the database based on bot id and exchange trade id - bot id not necessary here, but 
-        helps to showcase that everything is handled on a bot by bot basis '''
-        order_status = 'filled' # TODO make it more flexible to support multiple execution chunks
+    def _db_update_order(self, order_exchange_trade_id, order_chunks):
+        ''' updated orders in the database based on bot id and exchange trade id (fetchMyTrades) - 
+            to allow for orders not immediately filled.
+            bot id not necessary here, but helps to showcase that everything is handled on a bot by bot basis.
+            order_exchange_trade_id: string, exchange unique oder identiefier
+            order_chunks: list containing all the clips belonging to the id described above
+        '''
+
         # ie: all trades associated with the order and sum amount traded across those
-        order_trades = json.dumps(order_checked)
-        order_quantity_filled = order_checked['amount']
-        order_price_filled = order_checked['price']
-        order_fee = order_checked['fee']['cost']
+        order_trades = json.dumps(order_chunks)
+
+        order_quantity_filled = 0
+        order_weighted_prices = 0 # components for weighted average price
+        order_fee = 0
+
+        for order_chunk in order_chunks:
+            # for each chunk of the order, calculate the stats
+            order_quantity_filled += order_chunk['amount']
+            order_weighted_prices += order_chunk['price'] * order_chunk['amount']
+            order_fee += order_chunk['fee']['cost']
+
+        order_price_filled = order_weighted_prices / order_quantity_filled # weighted average price
+
+        # order initial amount placed compared to order_quantity_filled to determine status
+        total_amount_placed = db_update.order_placed_amount(order_exchange_trade_id, self.db_config_parameters)
+        
+        if order_quantity_filled == 0:
+            order_status = 'dormant'
+        elif np.isclose(order_quantity_filled, total_amount_placed): # isclose for floating comparison
+            order_status = 'filled'
+        else:
+            order_status = 'partialled'
 
         fields = [
             order_status,
@@ -338,18 +389,75 @@ class TradingBot():
 
     def order_executed_check(self, order_exchange_trade_id):
         ''' Check if a certain order 'id' has been executed '''
-        # TODO check if this order check is robust of if order executed in multiple tranches might return multiple entries for that certain order id
+        # check if order has been already fully filled, if so move on
+        if db_update.order_filled_checked(order_exchange_trade_id, self.db_config_parameters):
+            return True
+        
         self.executed_orders = self.exchange.fetchMyTrades(self.pair)
         current_order_records = [order for order in self.executed_orders if order['order']==order_exchange_trade_id]
-        order_checked = len(current_order_records) == 1
+        order_checked = len(current_order_records) >= 1 # at least one order chunk
         
         if order_checked:
-            self._db_update_order(order_exchange_trade_id, current_order_records[0]) # only value with records in the database
+            self._db_update_order(order_exchange_trade_id, current_order_records) # only value with records in the database
             self.logger.info(f"-- Order status updated at {datetime.now().isoformat()}")
         else:
-            self.logger.warning(f"-- Order not updated, order_checked not 1 {current_order_records} - at {datetime.now().isoformat()}")
+            self.logger.warning(f"-- Order not executed, order_checked less than 1 {current_order_records} - at {datetime.now().isoformat()}")
 
         return order_checked
+
+
+    def create_new_order(self):
+        # get order book and sizing
+        self.get_ob_and_sizing()
+
+        self.order_price = self.top_ask_px * 1.001
+        ## check if already in position, avoid double orders on same bar refreshing with new signal every time
+        # place limit buy order 10bps above current ask price - provide some buffer for signal confirmation
+        try:
+            self.buy_order = self.exchange.createLimitOrder(
+                self.pair,
+                side='buy',
+                amount=self.trade_size, 
+                price=self.order_price 
+            )
+
+        except Exception as e:
+            self.orders_error_handling(e)
+            self.logger.error(f'### Order NOT place correctly due to the following exception: {type(e).__name__} - {e}')
+        
+        # set initial stop loss
+        self.sl_price = self.buy_order['price'] * (1 - self.sl_pctg)
+
+
+    def orders_error_handling(self, e):
+        ''' Handle orders related exception.
+            if exception is raised, it's then captured y the run_bot exception block
+            if the exception is not a known one, activate the termination protocle and leave the bot
+        '''
+        if type(e).__name__ == 'BadSymbol':
+            print('handling bad simble excp', e, ' ', type(e).__name__)
+            raise
+
+        elif type(e).__name__ == 'InsufficientFunds':
+            # insufficient funds
+            print('insufficient funds error: ', e)
+            raise
+
+        elif type(e).__name__ == 'InvalidOrder':
+            # invalid order, ie Minimum order size is 10.0 GBP
+            print('InvalidOrder error', e)
+            raise
+
+        elif type(e).__name__ == 'ExchangeError':
+            # errors such as price more than 20% above mkt price
+            print('exchange error', e)
+            raise
+
+        else:
+            # in case of unaught exception, better to abort the bot
+            print('other uncaught: ', e, ' ', type(e).__name__)
+            self._bot_termination_protocol(e)
+            
 
     ## TODO ORDER MANAGEMENT METHOD:
     ## check against open orders, live orders and past trade. Essential: order ID, side, amount (filled) and state of the order
@@ -366,23 +474,9 @@ class TradingBot():
             # if not in position, check the signal
 
             if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==1 and self.bars_df.loc[previous_period]['timestamp']>self.signal_time:
-                # if signal is 1 and has been generated on a new bar - new timestamp
+                # if signal is 1 and has been generated on a new bar - new timestamp, allows for signal confirmation
 
-                # get order book and sizing
-                self.get_ob_and_sizing()
-
-                self.order_price = self.top_ask_px * 1.001
-                ## check if already in position, avoid double orders on same bar refreshing with new signal every time
-                # place limit buy order 10bps above current ask price - provide some buffer for signal confirmation
-                self.buy_order = self.exchange.createLimitOrder(
-                    self.pair,
-                    side='buy',
-                    amount=self.trade_size, 
-                    price=self.order_price 
-                )
-                
-                # set initial stop loss
-                self.sl_price = self.buy_order['price'] * (1 - self.sl_pctg)
+                self.create_new_order()
 
                 self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
                 print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
@@ -488,40 +582,49 @@ class TradingBot():
     ### Bot termination protocol steps ###
     def _cancel_bot_pending_orders(self):
         ''' When trading bot fails or is terminated, cancel all pending orders '''
-        # get all open orders for this bot and cancel
-        pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)
-        pending_orders_id = pending_orders_df['order_id'].tolist()
-        for order_id in pending_orders_id:
-            self.exchange.cancel_order(order_id)
+        try:
+            # get all open orders for this bot and cancel
+            pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)
+            pending_orders_id = pending_orders_df['order_id'].tolist()
+            for order_id in pending_orders_id:
+                self.exchange.cancel_order(order_id)
+            self.logger.info(f"Cancelled {len(pending_orders_id)} pending orders")
+        except Exception as e:
+            self.logger.error("Error in cancelling pending orders", exc_info=True)
 
 
     def _close_open_positions(self):
         ''' When trading bot fails or is terminated, liquidate all positions as market orders '''
-        # check current position, close netting to 0
-        net_exposure = db_update.select_bot_current_exposure(self.bot_id, self.db_config_parameters)
-        if net_exposure:
-            # if positive exposure, sell it
-            if net_exposure > 0:
-                self.closing_order = self.exchange.createOrder(
-                    self.pair, 
-                    'market', 
-                    'sell', 
-                    net_exposure
-                )
-                self._db_new_order(self.closing_order)
+        try:
+            # check current position, close netting to 0
+            net_exposure = db_update.select_bot_current_exposure(self.bot_id, self.db_config_parameters)
+            if net_exposure:
+                # if positive exposure, sell it
+                if net_exposure > 0:
+                    self.closing_order = self.exchange.createOrder(
+                        self.pair, 
+                        'market', 
+                        'sell', 
+                        net_exposure
+                    )
+                    self._db_new_order(self.closing_order)
 
-            # if negative exposure, close it
-            elif net_exposure < 0:
-                self.closing_order = self.exchange.createOrder(
-                    self.pair, 
-                    'market', 
-                    'buy', 
-                    net_exposure
-                )
-                self._db_new_order(self.closing_order)
-        else:
-            print(f'Net exposure is {net_exposure}')
+                # if negative exposure, close it
+                elif net_exposure < 0:
+                    self.closing_order = self.exchange.createOrder(
+                        self.pair, 
+                        'market', 
+                        'buy', 
+                        net_exposure
+                    )
+                    self._db_new_order(self.closing_order)
+            else:
+                print(f'Net exposure is {net_exposure}')
 
+            self.logger.info(f"Closed open position of {net_exposure}")
+
+        except Exception as e:
+            self.logger.error("Failed closing open positions", exc_info=True)
 
     def _bot_termination_protocol(self, err):
         self.end_of_bot_time = datetime.now().isoformat() # used to update database and in logger
@@ -530,3 +633,4 @@ class TradingBot():
         self._close_open_positions()
         self._db_update_bot() # update bots table
         self._db_new_health_status('DOWN', err) # adding new bot status
+        self.logger.info('## End of termination protocol ##')

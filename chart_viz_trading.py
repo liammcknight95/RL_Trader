@@ -14,6 +14,7 @@ import ccxt
 import json
 import random
 import docker
+from docker.types import Mount
 import time
 
 def new_container(client, fun_bot_name):
@@ -23,12 +24,18 @@ def new_container(client, fun_bot_name):
     try:
         container_obj = client.containers.run(
             image=image_name,
-            detach=True, # -d, returns a container object
+            detach=True, # -d, returns a container object  # false for development mode
             tty=True, # -t
             extra_hosts={'host.docker.internal':'host-gateway'},
             volumes={f'{abs_path_logger}/StratTest/Logging':{'bind':'/RL_Trader/StratTest/Logging', 'mode':'rw'}},
             name=fun_bot_name,
-            pid_mode='host' # use the host PID namespace inside the container
+            pid_mode='host', # use the host PID namespace inside the container
+            auto_remove=True,
+            mounts=[Mount(
+                target="/RL_Trader/StratTest",
+                source=f"{abs_path_logger}/StratTest",
+                type='bind'
+            )] # for development mode
         )
         print(f'New container called {fun_bot_name}')
 
@@ -41,7 +48,7 @@ def new_container(client, fun_bot_name):
             return new_container(client, fun_bot_name)
 
         else: 
-            print('container never created')
+            print(e, 'container never created')
             return "_"
             # handle what happens here in app
 
@@ -51,6 +58,7 @@ def new_container(client, fun_bot_name):
     Input({'type': 'trading-bot-btn-liquidate', 'index': ALL}, "n_clicks"),
     State("trading-ccy-pairs", "value"),
     State("trading-owned-ccy-size", "value"),
+    State("trading-bot-opening-position", "value"),
     State("trading-bot-strategy", "value"),
     State("trading-bot-freqs", "value"),
     State("trading-bot-stop-loss-bps", "value"),
@@ -59,7 +67,7 @@ def new_container(client, fun_bot_name):
     State("bot-strategy-param-2", "value"),
     prevent_initial_call=True
 )
-def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, owned_ccy_size, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -75,16 +83,17 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, ow
         fun_bot_name = container_obj.name
         fun_bot_id = container_obj.id
         print(fun_bot_name, fun_bot_id)
-
+        print(opening_position)
         command_list = [
             "python3", 
-            os.path.join(bot_script_path, "run_bot.py"), # run_mock_script
+            os.path.join(bot_script_path, "StratTest/run_bot.py"), # run_mock_script
             "--pair", f"{pair}",
             "--strategy", f"{strategy}",
             "--frequency", f"{frequency}",
-            "--sl_type", f"{sl_type}", # TODO make this dynamic from UI?
+            "--sl_type", f"{sl_type}", # stop loss strategy
             "--sl_pctg", f"{sl_bps/10000}", # from bps to pctg
-            "--owned_ccy_size", f"{owned_ccy_size}", # TODO make dynamic from ui
+            "--owned_ccy_size", f"{owned_ccy_size}", # how much is owned of a certain ccy at the beginning
+            "--opening_position", f"{opening_position}",
             "--short_ema", f"{strategy_param_1}", # bot ui element strategy 1
             "--long_ema", f"{strategy_param_2}", # bot ui element strategy 2
             "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
@@ -94,7 +103,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, ow
             cmd=command_list,
             stdin=True, # -i
             tty=True, # -t
-            detach=True # return exec results
+            detach=True, # return exec results
         )
 
         message = f"CREATED new {pair}, exec results: {exec_results}, Bot at {datetime.now().isoformat()}. . Name:{fun_bot_name}"
@@ -115,6 +124,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, ow
             client = docker.from_env() # docker client
             delete_bot_container_obj = client.containers.get(delete_bot_container_id)
             delete_bot_container_obj.exec_run(f"kill -SIGINT {delete_bot_df_pid}") # simulates KeyboardInterrupt
+            time.sleep(5) # allow some time for bot termination protocol
             delete_bot_container_obj.kill()
 
             message = f"DELETED Bot at {datetime.now().isoformat()}. NAME: {bot_container_name} PID: {delete_bot_df_pid}  Unique id: {deleted_bot_unique_id}" 

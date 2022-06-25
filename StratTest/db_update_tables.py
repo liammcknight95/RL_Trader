@@ -268,6 +268,33 @@ def select_active_bots_status(config_parameters):
     data = pd.read_sql(sql, conn)
     return data
 
+
+def order_filled_checked(exchange_trade_id, config_parameters):
+    ''' query that checks if an existing order has been completely filled or not '''
+
+    sql = f'''
+        SELECT ABS(order_quantity_placed - order_quantity_filled) <0.0000001 
+        FROM public.bot_orders_tbl
+        WHERE order_exchange_trade_id = '{exchange_trade_id}'
+    '''
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data.values[0][0]
+
+
+def order_placed_amount(exchange_trade_id, config_parameters):
+    ''' query that pulls amount order placed'''
+
+    sql = f''' 
+        SELECT order_quantity_placed from bot_orders_tbl
+        WHERE order_exchange_trade_id = '{exchange_trade_id}' '''
+
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data.values[0][0]
+
 # TODO update existing order:
 # update if partially or totally filled - amount
 # update if cancelled - status
