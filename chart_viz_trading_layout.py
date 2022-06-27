@@ -70,7 +70,69 @@ running_bots_ui = dbc.Card(
 
     ],
     body=True,
-    className='h-100'
+    className='h-100',
+    # style={'minHeight':'55vh'}
+)
+
+### RUNNING BOTS ORDERS
+def new_order_info(order_id, order_general_info, order_details):
+    ''' Dynamically create a new ui element every time a new oder is placed '''
+    return dbc.Col(
+        [
+    
+            dbc.Row(
+                [
+                    dbc.Col(
+                        html.P(order_general_info, id={"type":"trading-order-general-info", "index":order_id}),
+                        width=12
+                    )
+                ]
+            ),
+
+            dbc.Row(
+                [
+                    dbc.Col(
+                        html.P(order_details, id={"type":"trading-order-details", "index":order_id}),
+                        width=12
+                    ),
+                ]
+            )
+        ],
+        width=12,
+        style={
+            "backgroundColor":"#444", 
+            "paddingTop":"15px",
+
+        }
+    )
+
+running_orders_ui = dbc.Card(
+    [
+        dbc.Row(
+            dbc.Label(
+                "Orders", 
+                style={"text-align":"center"}
+            ),
+        ),
+
+        html.Br(),
+
+        dbc.Row(
+            [
+                html.P("List orders of running bots and recently closed ones - from database")
+            ],
+            id="trading-running-orders-list"
+        ),
+
+        dcc.Store(
+            id="trading-running-orders-element-python-list", 
+            storage_type="memory"
+        ),
+
+    ],
+    body=True,
+    # className='h-100',
+    # style={'minHeight':'30vh'}
 )
 
 ### NEW BOTS
@@ -331,8 +393,11 @@ trading_page_layout = dbc.Container(
                 ),
 
                 dbc.Col(
-                    running_bots_ui,
-                    width=6
+                    [
+                        dbc.Row(running_bots_ui, className='h-50 overflow-scroll', style={'paddingBottom':'20px'}),
+                        dbc.Row(running_orders_ui, className='h-50 overflow-scroll', style={'maxHeight':'50vh'}),
+                    ],
+                    width=6,
                 ),
 
                 dbc.Col(
@@ -340,9 +405,9 @@ trading_page_layout = dbc.Container(
                     width=2
                 )
 
-            ]
+            ],
         )
 
     ],
-    fluid=True
+    fluid=True,
 )

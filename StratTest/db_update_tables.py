@@ -269,6 +269,25 @@ def select_active_bots_status(config_parameters):
     return data
 
 
+def select_running_orders(config_parameters):
+    ''' query that selects orders belonging to active bots or recently terminated ones '''
+
+    sql = ''' 
+        SELECT * 
+        FROM bot_orders_tbl AS orders, bot_bots_tbl AS bots
+        WHERE orders.order_bot_id = bots.bot_id
+            AND (
+                bots.bot_end_date IS NULL 
+                OR bots.bot_end_date > (NOW() - INTERVAL '1 days')
+            )
+        ORDER BY order_timestamp_placed DESC
+        ;'''
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data
+
+
 def order_filled_checked(exchange_trade_id, config_parameters):
     ''' query that checks if an existing order has been completely filled or not '''
 

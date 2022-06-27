@@ -5,7 +5,7 @@ import os, signal, uuid
 from subprocess import Popen, call
 import dash_bootstrap_components as dbc
 from chart_viz_config import bot_script_path, fun_bot_names, image_name, abs_path_logger, currencies_mapping
-from chart_viz_trading_layout import new_bot_info, new_balance_fetched
+from chart_viz_trading_layout import new_bot_info, new_order_info, new_balance_fetched
 from chart_viz_strategy_inputs_layout import dynamic_strategy_controls
 from StratTest import db_update_tables as db_update
 import json
@@ -146,9 +146,14 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, ow
     State("trading-live-bots-element-python-list", "data"),
 )
 def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bots_list):
+    ''' Refresh running bots ui, the presence of a list with stored UI elements is there to avoid
+        too many unnecessary refreshes. With many bots refreshing slightly asynchronously on different 
+        containers, it will likely lead to a refesh every 5 seconds anyway
+    '''
 
     live_bots_ui_children = []
     active_bots_df = db_update.select_active_bots_status(config.pg_db_configuration())
+    # TODO: group all info and issue related to a certain bot in 1 row
 
     active_bots_df["bot_description"] = active_bots_df["bot_container_name"].astype(str) + \
     ": " + active_bots_df["bot_exchange"] + \
@@ -162,12 +167,17 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
         " - Status: " + active_bots_df["health_status"] + \
         "  " + active_bots_df["health_status_error"].astype(str)
 
-    bot_ids = active_bots_df["bot_id"].to_list()
-    bot_descriptions = active_bots_df["bot_description"].to_list()
-    bot_statuses = active_bots_df["bot_last_status"].to_list()
+    bot_ids = active_bots_df["bot_id"].unique()
 
-    for bot_id, bot_description, bot_status in zip(bot_ids, bot_descriptions, bot_statuses):
-        live_bots_ui_children.append(new_bot_info(bot_id, bot_description, bot_status))
+    for bot_id in bot_ids:
+        single_bot_df = active_bots_df[active_bots_df['bot_id']==bot_id]
+        
+        bot_descriptions = single_bot_df["bot_description"].to_list()
+        bot_statuses = single_bot_df["bot_last_status"].to_list()
+
+        for bot_description, bot_status in zip(bot_descriptions, bot_statuses):
+            live_bots_ui_children.append(new_bot_info(bot_id, bot_description, bot_status))
+
         live_bots_ui_children.append(html.P(''))
         
 
@@ -184,6 +194,46 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
         # print(existing_bots_list)
         return live_bots_ui_children, existing_bots_list
 
+
+# TODO write callback that populates ordersof running bots as well as "recently" close orders of deleted bots
+@callback(
+    Output("trading-running-orders-list", "children"),
+    Output("trading-running-orders-element-python-list", "data"),
+    Input("trading-live-bots-interval-refresh", "n_intervals"),
+    State("trading-running-orders-element-python-list", "data"),
+)
+def populate_recent_bot_orders(refresh_live_bots, existing_orders_list):
+    ''' Refresh recent orders ui, the presence of a list with stored UI elements is there to avoid
+        too many unnecessary refreshes. With many bots refreshing slightly asynchronously on different 
+        containers, it will likely lead to a refesh every 5 seconds anyway
+    '''
+    running_orders_ui_children = []
+    running_orders_df = db_update.select_running_orders(config.pg_db_configuration())
+    running_orders_df["order_description"] = running_orders_df["bot_container_name"].astype(str) + \
+    ": " + running_orders_df["bot_exchange"] + \
+    " - " + running_orders_df["order_timestamp_placed"].astype(str)
+
+    order_ids = running_orders_df["order_id"].to_list()
+    order_general_infos = running_orders_df["order_description"].to_list()
+    order_details = running_orders_df["order_trades"].astype(str).to_list()
+
+    for order_id, general_info, detail in zip(order_ids, order_general_infos, order_details):
+        running_orders_ui_children.append(new_order_info(order_id, general_info, detail))
+        running_orders_ui_children.append(html.P(''))
+        
+
+    if str(running_orders_ui_children) == existing_orders_list:
+        print("NO UPDATE")
+        return no_update, no_update
+
+    else:
+        print("UI UPDATED")
+        existing_orders_list = str(running_orders_ui_children) # assign same value
+
+        # print(str(live_bots_ui_children))
+        # print("(###)")
+        # print(existing_bots_list)
+        return running_orders_ui_children, existing_orders_list  
 
 @callback(
     Output("trading-non-zero-balances-free-list", "children"),
