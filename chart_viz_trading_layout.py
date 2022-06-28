@@ -1,36 +1,47 @@
 import dash_bootstrap_components as dbc
 from dash import dcc, html
+import plotly.graph_objects as go
 from chart_viz_config import ccxt_exchanges, strategies, currencies, currencies_mapping, frequencies
 
 ### RUNNING BOTS
-def new_bot_info(bot_id, bot_description, bot_status):
+def new_bot_info(bot_id, bot_description, bot_statuses):
     ''' Dynamically create a new ui element every time a bot spins up or is deleted '''
     return dbc.Col(
-        [
-    
-            dbc.Row(
-                [
-                    dbc.Col(
-                        html.P(bot_description, id={"type":"trading-bot-info", "index":bot_id}),
-                        width=10
-                    ),
+            [
+                dbc.Row(
+                    [
 
-                    dbc.Col(
-                        dbc.Button('Liquidate', id={"type":"trading-bot-btn-liquidate", "index":bot_id}, color='danger'),
-                        width=2
-                    )
-                ]
-            ),
+                        dbc.Col(
+                            html.P(bot_description),
+                            width=8
+                        ),
 
-            dbc.Row(
-                [
-                    dbc.Col(
-                        html.P(bot_status, id={"type":"trading-bot-status", "index":bot_id}),
-                        width=10
-                    ),
-                ]
-            )
-        ],
+                        dbc.Col(
+                            [
+                                dbc.Button('Show Data', id={"type":"trading-bot-btn-plot", "index":bot_id}),
+                                dbc.Button('Liquidate', id={"type":"trading-bot-btn-liquidate", "index":bot_id}, color='danger'),
+                            ],
+                            width=4,
+                            className="d-grid gap-2 d-md-flex justify-content-md-end",
+                        )                  
+
+                    ],
+
+                    justify="between"
+                )
+            ] +
+
+            [
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            html.P(bot_status),
+                            width=10
+                        )
+                    ]
+                )
+             for bot_status in bot_statuses],
+
         width=12,
         style={
             "backgroundColor":"#444", 
@@ -66,6 +77,44 @@ running_bots_ui = dbc.Card(
         dcc.Store(
             id="trading-live-bots-element-python-list", 
             storage_type="memory"
+        ),
+
+        dbc.Modal(
+            [
+                dbc.ModalHeader(
+                    dbc.ModalTitle(
+                        "Header",
+                        id="trading-live-bots-modal-title"
+                    )
+                ),
+
+                dbc.ModalBody(
+                    dbc.Card(
+                        dcc.Graph(
+                            id="trading-live-bots-px-chart",
+                            figure={
+                                'layout': go.Layout(
+                                paper_bgcolor='rgba(0,0,0,0)',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                xaxis=dict(gridcolor='#444'),
+                                yaxis=dict(gridcolor='#444'),
+                                # height=650
+                                )
+                            },
+                            # style={'height':'100%'},
+                            # className='h-100'
+                            
+                        ),
+                        # style={ 'minHeight':'75vh', 'height':'75vh', 'maxHeight':'75vh'},#, 'height':'70%'
+                        body=True,
+                        className='overflow-scroll'
+                    ),
+                    id="trading-live-bots-modal-body"
+                ),
+            ],
+            id="trading-live-bots-modal",
+            size="xl",
+            is_open=False,
         ),
 
     ],
@@ -394,7 +443,7 @@ trading_page_layout = dbc.Container(
 
                 dbc.Col(
                     [
-                        dbc.Row(running_bots_ui, className='h-50 overflow-scroll', style={'paddingBottom':'20px'}),
+                        dbc.Row(running_bots_ui, className='h-50 overflow-scroll', style={'paddingBottom':'20px', 'maxHeight':'50vh'}),
                         dbc.Row(running_orders_ui, className='h-50 overflow-scroll', style={'maxHeight':'50vh'}),
                     ],
                     width=6,

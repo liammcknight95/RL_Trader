@@ -314,6 +314,33 @@ def order_placed_amount(exchange_trade_id, config_parameters):
     data = pd.read_sql(sql, conn)
     return data.values[0][0]
 
+
+def select_bot_distinct_bars(bot_id, config_parameters):
+    ''' query that returns the vary last update for each bar stored in the database per bot '''
+
+    sql = f''' 
+    SELECT DISTINCT ON (bar_time) 
+        bar_time, 
+        bar_record_timestamp,
+        bar_open,
+        bar_high,
+        bar_low,
+        bar_close,
+        bar_stop_loss_price
+    FROM 
+        bot_order_book_bars_tbl -- bar_time, bar_stop_loss_price
+    WHERE 
+        bar_bot_id = '{bot_id}' 
+    ORDER BY 
+        bar_time ASC, 
+        bar_record_timestamp DESC
+    '''
+
+
+    conn = psycopg2.connect(**config_parameters)
+    data = pd.read_sql(sql, conn)
+    return data
+
 # TODO update existing order:
 # update if partially or totally filled - amount
 # update if cancelled - status

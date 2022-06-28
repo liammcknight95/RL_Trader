@@ -91,6 +91,8 @@ class TradingBot():
 
                 else: self.logger.info(f"No Opening order placed, resuming normal bot activity")
 
+            self.sell_order = None # placeholder for an initial empty sell order
+
             self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
 
         except Exception as e:
@@ -470,22 +472,31 @@ class TradingBot():
         self.current_price = self.bars_df.loc[current_period]['close']
         self.previous_price = self.bars_df.loc[previous_period]['close']
 
+        # if not in position, check the signal..
         if not self.in_position:
-            # if not in position, check the signal
 
-            if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==1 and self.bars_df.loc[previous_period]['timestamp']>self.signal_time:
-                # if signal is 1 and has been generated on a new bar - new timestamp, allows for signal confirmation
+            # .. but first check that any previous sell order has been executed
+            if self.sell_order:
+                if self.order_executed_check(self.sell_order['id']):
+                    self.sell_order = None
+                    # TODO a check could be added that the order has been fully executed, fetching from db?
+                    self.logger.info(f"SELL ORDER has been executed, setting self.sell_order = None")
 
-                self.create_new_order()
-
-                self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
-                print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
-                self.in_position = True
-                self.signal_time = self.bars_df.loc[previous_period]['timestamp']
-
-                self._db_new_order(self.buy_order) # adding new order to database
             else:
-                self.logger.info(f"No new orders. Current position: {self.in_position}")
+                # business as usual
+                if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==1 and self.bars_df.loc[previous_period]['timestamp']>self.signal_time:
+                    # if signal is 1 and has been generated on a new bar - new timestamp, allows for signal confirmation
+
+                    self.create_new_order()
+
+                    self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
+                    print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
+                    self.in_position = True
+                    self.signal_time = self.bars_df.loc[previous_period]['timestamp']
+
+                    self._db_new_order(self.buy_order) # adding new order to database
+                else:
+                    self.logger.info(f"No new orders. Current position: {self.in_position}")
 
         
         elif self.in_position:

@@ -163,20 +163,19 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
     " - " + active_bots_df["bot_freq"] + \
     " - " + active_bots_df["bot_stop_loss_pctg"].astype(str)
 
-    active_bots_df["bot_last_status"] = "Last updated at " + active_bots_df["last_update"].astype(str) + \
+    active_bots_df["bot_last_status"] = "Update: " + active_bots_df["last_update"].astype(str) + \
         " - Status: " + active_bots_df["health_status"] + \
         "  " + active_bots_df["health_status_error"].astype(str)
 
     bot_ids = active_bots_df["bot_id"].unique()
+    bot_descriptions = active_bots_df["bot_description"].unique()
 
-    for bot_id in bot_ids:
+    for bot_id, bot_description in zip(bot_ids, bot_descriptions):
+
         single_bot_df = active_bots_df[active_bots_df['bot_id']==bot_id]
-        
-        bot_descriptions = single_bot_df["bot_description"].to_list()
         bot_statuses = single_bot_df["bot_last_status"].to_list()
 
-        for bot_description, bot_status in zip(bot_descriptions, bot_statuses):
-            live_bots_ui_children.append(new_bot_info(bot_id, bot_description, bot_status))
+        live_bots_ui_children.append(new_bot_info(bot_id, bot_description, bot_statuses))
 
         live_bots_ui_children.append(html.P(''))
         
@@ -259,6 +258,38 @@ def populate_non_zero_balances(bots_list):
     balances_total = [new_balance_fetched(ccy, balances['total'][ccy], 'total') for ccy in balances['total'].keys() if balances['total'][ccy]!=0]
 
     return balances_free, balances_used, balances_total
+
+
+# populate strategy data plotting
+@callback(
+    Output("trading-live-bots-modal", "is_open"),
+    Output("trading-live-bots-px-chart", "figure"),
+    Input({"type": "trading-bot-btn-plot", "index": ALL}, "n_clicks"),
+    State("trading-live-bots-modal", "is_open"),
+    prevent_initial_call=True
+)
+def plot_strategy_data(show_data_btn, modal_is_open):
+
+    ctx_id = callback_context.triggered[0]['prop_id']
+    ctx_value = callback_context.triggered[0]['value']
+    print('#####', type(ctx_id.split('.')[0]), ctx_value)
+    if "trading-bot-btn-plot" in ctx_id.split('.')[0] and ctx_value is not None:
+        modal_is_open = not modal_is_open
+    
+        if modal_is_open:
+            plot_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
+            data = db_update.select_single_bot(plot_bot_unique_id, config.pg_db_configuration())
+            # TODO finish plotting
+            print('doing something ...')
+            figure = {}
+        # else:
+        #     figure = {}
+        #     print('do nothing')
+
+        return modal_is_open, figure
+
+    else:
+        return no_update, no_update
 
 
 # handle display of symbols - manual filter - given a selected exchange
