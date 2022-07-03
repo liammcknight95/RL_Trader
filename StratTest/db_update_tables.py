@@ -83,9 +83,13 @@ def insert_order_book_bars_table(fields, config_parameters):
             bar_action,
             bar_in_position,
             bar_stop_loss_price,
-            bar_strategy_signal
+            bar_strategy_signal,
+            bar_param_1,
+            bar_param_2,
+            bar_param_3,
+            bar_param_4
         ) 
-        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
     """
     execute_db_commands(sql, fields, config_parameters)
     return sql
@@ -262,6 +266,9 @@ def select_active_bots_status(config_parameters):
 			) health ON health.health_status_bot_id = bots.bot_id
         WHERE 
             bots.bot_end_date is Null
+        ORDER BY 
+            bots.bot_start_date DESC, 
+            health.last_update DESC
     '''
 
     conn = psycopg2.connect(**config_parameters)
@@ -326,7 +333,11 @@ def select_bot_distinct_bars(bot_id, config_parameters):
         bar_high,
         bar_low,
         bar_close,
-        bar_stop_loss_price
+        bar_stop_loss_price,
+        bar_param_1,
+        bar_param_2,
+        bar_param_3,
+        bar_param_4
     FROM 
         bot_order_book_bars_tbl -- bar_time, bar_stop_loss_price
     WHERE 

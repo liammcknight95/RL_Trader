@@ -36,6 +36,10 @@ def create_tables(config_parameters):
                 bar_in_position BOOLEAN,
                 bar_stop_loss_price NUMERIC,
                 bar_strategy_signal NUMERIC,
+                bar_param_1 NUMERIC,
+                bar_param_2 NUMERIC,
+                bar_param_3 NUMERIC,
+                bar_param_4 NUMERIC,
                 FOREIGN KEY (bar_bot_id)
                     REFERENCES bot_bots_tbl (bot_id)
                     ON DELETE CASCADE
