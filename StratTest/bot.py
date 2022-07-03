@@ -24,10 +24,11 @@ print('##### bot.py', os.getpid())
 
 class TradingBot():
 
-    def __init__(self, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, opening_position, container_id, container_name, sandbox=True, **params):
+    def __init__(self, exchange_subaccount, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, opening_position, container_id, container_name, sandbox=True, **params):
         ''' 
+            exchange_subaccount: str - name of exchange subaccount used for the strategy
             pair: str - currency pair the bot is trading
-            strategy: str - 
+            strategy: str - trading strategy used by the engine to genrate signal
             frequency: str - ie '30m'
             sl_type: str - type of stop loss, static or trailing
             sl_pctg: float - stop loss as a percentage of order price
@@ -41,10 +42,11 @@ class TradingBot():
             print('##### inside class bot.py', os.getpid())
 
             ## Exchange connectivity
+            self.exchange_subaccount = exchange_subaccount
             self.exchange = ccxt.bitstamp(
                 {
-                    'apiKey': config.BITSTAMP_API_KEY,
-                    'secret': config.BITSTAMP_API_SECRET
+                    'apiKey': config.exchange_keys[self.exchange_subaccount]['KEY'],
+                    'secret': config.exchange_keys[self.exchange_subaccount]['SECRET']
                 }
             )
             self.exchange.set_sandbox_mode(sandbox)
@@ -69,6 +71,21 @@ class TradingBot():
             self.bars_df = pd.DataFrame()
             self._db_new_bot() # add new bot to database and define self.bot_id      
             
+
+            # extract parameters generic names for bars table
+            if self.strategy == 'EMACrossOverLO':
+
+                self.strat_param_1 = f"ema_{self.params['short_ema']}"
+                self.strat_param_2 = f"ema_{self.params['long_ema']}"
+                self.strat_param_3 = None
+                self.strat_param_4 = None
+
+            elif self.strategy == 'BollingerBandsLO':
+
+                self.strat_param_1 = f"bollinger_hband_{params['window']}"
+                self.strat_param_2 = f"bollinger_lband_{params['window']}"
+                self.strat_param_3 = f"bollinger_mavg_{params['window']}"
+                self.strat_param_4 = None
 
             # opening position on instanciation
             if self.opening_position == 'Current':
@@ -96,7 +113,7 @@ class TradingBot():
             self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
 
         except Exception as e:
-            self.logger.error(f"Bot instanciation failed due to: {e}")
+            self.logger.error(f"Bot instanciation failed due to: {e}", exc_info=True)
 
 
     def _db_new_bot(self):
@@ -106,7 +123,6 @@ class TradingBot():
         bot_owned_ccy_end_position = None
         bot_start_date = self.signal_time
         bot_end_date = None
-        bot_exchange = 'Bitstamp' # static for now
         json_parameters = json.dumps(self.params)
         
         fields = [
@@ -121,7 +137,7 @@ class TradingBot():
             self.sl_pctg,
             self.sl_type,
             self.frequency,
-            bot_exchange,
+            self.exchange_subaccount,
             self.script_pid,
             self.container_id,
             self.container_name
@@ -250,6 +266,18 @@ class TradingBot():
         bar_stop_loss_price = self.sl_price
         bar_strategy_signal = int(bar[f'{self.strategy}_signal'])
 
+        if self.strat_param_1: bar_param_1 = bar[self.strat_param_1]
+        else: bar_param_1 =  None
+
+        if self.strat_param_2: bar_param_2 = bar[self.strat_param_2]
+        else: bar_param_2 =  None
+
+        if self.strat_param_3: bar_param_3 = bar[self.strat_param_3]
+        else: bar_param_3 =  None
+
+        if self.strat_param_4: bar_param_4 = bar[self.strat_param_4]
+        else: bar_param_4 =  None
+
         fields = [
             self.bot_id,
             bar_record_timestamp,
@@ -262,7 +290,11 @@ class TradingBot():
             bar_action,
             bar_in_position,
             bar_stop_loss_price,
-            bar_strategy_signal
+            bar_strategy_signal,
+            bar_param_1,
+            bar_param_2,
+            bar_param_3,
+            bar_param_4
         ]
 
         # create new orderbook record
@@ -645,3 +677,4 @@ class TradingBot():
         self._db_update_bot() # update bots table
         self._db_new_health_status('DOWN', err) # adding new bot status
         self.logger.info('## End of termination protocol ##')
+        ## TODO add a little while loop to make sure closing orders have been executed, not just placed

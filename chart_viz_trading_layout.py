@@ -1,7 +1,7 @@
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 import plotly.graph_objects as go
-from chart_viz_config import ccxt_exchanges, strategies, currencies, currencies_mapping, frequencies
+from chart_viz_config import ccxt_exchanges, strategies, frequencies
 
 ### RUNNING BOTS
 def new_bot_info(bot_id, bot_description, bot_statuses):
@@ -119,7 +119,7 @@ running_bots_ui = dbc.Card(
 
     ],
     body=True,
-    className='h-100',
+    #className='h-100',
     # style={'minHeight':'55vh'}
 )
 
@@ -206,7 +206,7 @@ new_bot_ui = dbc.Card(
                             options=[
                                 {"label": exch, "value": exch} for exch in ccxt_exchanges
                             ],
-                            value="Bitstamp",
+                            # value="Bitstamp",
                             multi=False,
                             persistence=True
                         ),
@@ -443,8 +443,8 @@ trading_page_layout = dbc.Container(
 
                 dbc.Col(
                     [
-                        dbc.Row(running_bots_ui, className='h-50 overflow-scroll', style={'paddingBottom':'20px', 'maxHeight':'50vh'}),
-                        dbc.Row(running_orders_ui, className='h-50 overflow-scroll', style={'maxHeight':'50vh'}),
+                        dbc.Row(running_bots_ui, className='h-50 overflow-scroll', style={'maxHeight':'50vh'}),
+                        dbc.Row(running_orders_ui, className='h-50 overflow-scroll', style={'paddingTop':'20px', 'maxHeight':'50vh'}),
                     ],
                     width=6,
                 ),

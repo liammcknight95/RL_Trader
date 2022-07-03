@@ -4,10 +4,11 @@ from datetime import datetime
 import os, signal, uuid
 from subprocess import Popen, call
 import dash_bootstrap_components as dbc
-from chart_viz_config import bot_script_path, fun_bot_names, image_name, abs_path_logger, currencies_mapping
+from chart_viz_config import bot_script_path, fun_bot_names, image_name, abs_path_logger, currencies_mapping, strategies
 from chart_viz_trading_layout import new_bot_info, new_order_info, new_balance_fetched
 from chart_viz_strategy_inputs_layout import dynamic_strategy_controls
 from StratTest import db_update_tables as db_update
+from StratTest import bot_plots
 import json
 import config
 import ccxt
@@ -56,6 +57,7 @@ def new_container(client, fun_bot_name):
     Output("trading-amend-bot-message", "children"),
     Input("trading-new-bot", "n_clicks"),
     Input({'type': 'trading-bot-btn-liquidate', 'index': ALL}, "n_clicks"),
+    State("trading-ccxt-exchanges", "value"),
     State("trading-ccy-pairs", "value"),
     State("trading-owned-ccy-size", "value"),
     State("trading-bot-opening-position", "value"),
@@ -67,7 +69,7 @@ def new_container(client, fun_bot_name):
     State("bot-strategy-param-2", "value"),
     prevent_initial_call=True
 )
-def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange_subaccount, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -76,38 +78,48 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, pair, ow
     # if a new bot is being created
     if ctx_id.split('.')[0] == "trading-new-bot":
 
-        # spin up a new bot
-        # new container
-        client = docker.from_env() # docker client
-        container_obj = new_container(client, random.choice(fun_bot_names)) # ui name for bot returned
-        fun_bot_name = container_obj.name
-        fun_bot_id = container_obj.id
-        print(fun_bot_name, fun_bot_id)
-        print(opening_position)
-        command_list = [
-            "python3", 
-            os.path.join(bot_script_path, "StratTest/run_bot.py"), # run_mock_script
-            "--pair", f"{pair}",
-            "--strategy", f"{strategy}",
-            "--frequency", f"{frequency}",
-            "--sl_type", f"{sl_type}", # stop loss strategy
-            "--sl_pctg", f"{sl_bps/10000}", # from bps to pctg
-            "--owned_ccy_size", f"{owned_ccy_size}", # how much is owned of a certain ccy at the beginning
-            "--opening_position", f"{opening_position}",
-            "--short_ema", f"{strategy_param_1}", # bot ui element strategy 1
-            "--long_ema", f"{strategy_param_2}", # bot ui element strategy 2
-            "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
-            "--cntr_name", f"{fun_bot_name}"# container name where bot is running - not unique
-        ]
-        exec_results = container_obj.exec_run(
-            cmd=command_list,
-            stdin=True, # -i
-            tty=True, # -t
-            detach=True, # return exec results
-        )
+        try:
+            # spin up a new bot
+            # new container
+            client = docker.from_env() # docker client
+            container_obj = new_container(client, random.choice(fun_bot_names)) # ui name for bot returned
+            fun_bot_name = container_obj.name
+            fun_bot_id = container_obj.id
+            print(fun_bot_name, fun_bot_id)
+            print(opening_position)
+            print(f'#### {strategy_param_1}, {strategy_param_2} ####')
 
-        message = f"CREATED new {pair}, exec results: {exec_results}, Bot at {datetime.now().isoformat()}. . Name:{fun_bot_name}"
+            # check that key parameters are not None
+            assert pair and strategy and frequency and sl_type and sl_bps and owned_ccy_size and opening_position and strategy_param_1 and strategy_param_2
+            
+            command_list = [
+                "python3", 
+                os.path.join(bot_script_path, "StratTest/run_bot.py"), # run_mock_script
+                "--exchange_subaccount", f"{exchange_subaccount}", # subaccount used for the strategy
+                "--pair", f"{pair}",
+                "--strategy", f"{strategy}",
+                "--frequency", f"{frequency}",
+                "--sl_type", f"{sl_type}", # stop loss strategy
+                "--sl_pctg", f"{sl_bps/10000}", # from bps to pctg
+                "--owned_ccy_size", f"{owned_ccy_size}", # how much is owned of a certain ccy at the beginning
+                "--opening_position", f"{opening_position}",
+                f"--{strategies[strategy]['ids'][0]}", f"{strategy_param_1}", # bot ui element strategy 1
+                f"--{strategies[strategy]['ids'][1]}", f"{strategy_param_2}", # bot ui element strategy 2
+                "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
+                "--cntr_name", f"{fun_bot_name}"# container name where bot is running - not unique
+            ]
+            exec_results = container_obj.exec_run(
+                cmd=command_list,
+                stdin=True, # -i
+                tty=True, # -t
+                detach=True, # return exec results
+            )
+
+            message = f"CREATED new {pair}, exec results: {exec_results}, Bot at {datetime.now().isoformat()}. . Name:{fun_bot_name}"
         
+        except Exception as e:
+            message = f"Bot NOT created, check the inputs"
+
     # if a bot is being deleted - ie a btn liquidate has actually been clicked
     elif "trading-bot-btn-liquidate" in ctx_id.split('.')[0] and ctx_value is not None:
         
@@ -238,26 +250,31 @@ def populate_recent_bot_orders(refresh_live_bots, existing_orders_list):
     Output("trading-non-zero-balances-free-list", "children"),
     Output("trading-non-zero-balances-used-list", "children"),
     Output("trading-non-zero-balances-total-list", "children"),
-    Input("trading-live-bots-list", "children")
+    Input("trading-live-bots-list", "children"),
+    Input("trading-ccxt-exchanges", "value"),
+    prevent_initial_call=True
 )
-def populate_non_zero_balances(bots_list):
-    print('in update balance block')
-    # fetch balances - TODO better way than creating exchange obj every time
-    exchange = ccxt.bitstamp(
-        {
-            'apiKey': config.BITSTAMP_API_KEY,
-            'secret': config.BITSTAMP_API_SECRET
-        }
-    )
+def populate_non_zero_balances(bots_list, exchange_subaccount):
+    if exchange_subaccount is not None:
+        print('in update balance block')
+        # fetch balances - TODO better way than creating exchange obj every time
+        exchange = ccxt.bitstamp(
+            {
+                'apiKey': config.exchange_keys[exchange_subaccount]['KEY'],
+                'secret': config.exchange_keys[exchange_subaccount]['SECRET']
+            }
+        )
 
-    balances = exchange.fetch_balance()
+        balances = exchange.fetch_balance()
 
-    # non zero balances
-    balances_free = [new_balance_fetched(ccy, balances['free'][ccy], 'free') for ccy in balances['free'].keys() if balances['free'][ccy]!=0]
-    balances_used = [new_balance_fetched(ccy, balances['used'][ccy], 'used') for ccy in balances['used'].keys() if balances['used'][ccy]!=0]
-    balances_total = [new_balance_fetched(ccy, balances['total'][ccy], 'total') for ccy in balances['total'].keys() if balances['total'][ccy]!=0]
+        # non zero balances
+        balances_free = [new_balance_fetched(ccy, balances['free'][ccy], 'free') for ccy in balances['free'].keys() if balances['free'][ccy]!=0]
+        balances_used = [new_balance_fetched(ccy, balances['used'][ccy], 'used') for ccy in balances['used'].keys() if balances['used'][ccy]!=0]
+        balances_total = [new_balance_fetched(ccy, balances['total'][ccy], 'total') for ccy in balances['total'].keys() if balances['total'][ccy]!=0]
 
-    return balances_free, balances_used, balances_total
+        return balances_free, balances_used, balances_total
+    else:
+        return [], [], []
 
 
 # populate strategy data plotting
@@ -278,10 +295,10 @@ def plot_strategy_data(show_data_btn, modal_is_open):
     
         if modal_is_open:
             plot_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
-            data = db_update.select_single_bot(plot_bot_unique_id, config.pg_db_configuration())
-            # TODO finish plotting
-            print('doing something ...')
-            figure = {}
+            data = db_update.select_bot_distinct_bars(plot_bot_unique_id, config.pg_db_configuration())
+            print(data.head(2))
+            figure = bot_plots.live_bot_strategy(data, ['bar_param_1', 'bar_param_2'])
+            # TODO finish plotting - get params dynamically
         # else:
         #     figure = {}
         #     print('do nothing')
@@ -298,8 +315,9 @@ def plot_strategy_data(show_data_btn, modal_is_open):
     Output("trading-ccy-pairs", "value"),
     Input("trading-ccxt-exchanges", "value")
 )
-def display_exchange_symbols(exchange):
-    if exchange is not None:
+def display_exchange_symbols(exchange_subaccount):
+    if exchange_subaccount is not None:
+        exchange = exchange_subaccount.split('_')[0]
         options=[
             {"label": cur, "value": cur} for cur in currencies_mapping[exchange].values()
         ]
