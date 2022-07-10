@@ -326,7 +326,7 @@ class TradingBot():
         else: # fetch deltas to minimize data called via api
 
             # set index if timestamp is not set as index
-            if 'timestamp' in self.bars_df.tail.columns:
+            if 'timestamp' in self.bars_df.columns:
                 self.bars_df = self.bars_df.set_index('timestamp')
 
             # working out how many bars to fetch
