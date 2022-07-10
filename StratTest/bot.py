@@ -52,7 +52,7 @@ class TradingBot():
             self.exchange.set_sandbox_mode(sandbox)
 
             ## Database connectivity
-            self.db_config_parameters = config.pg_db_configuration()
+            self.db_config_parameters = config.pg_db_configuration(location='server')
 
             self.pair = pair
             self.strategy = strategy
@@ -307,7 +307,7 @@ class TradingBot():
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']).sort_values(by='timestamp')
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df['timestamp'] = df['timestamp'].dt.tz_localize('utc').dt.tz_convert('Europe/London') # localize to utc and then convert to London tz
-        df = df.set_index('timestamp')
+        df = df.set_index('timestamp') # useful to have timestamp index for the engine
         return df
 
 
@@ -324,6 +324,10 @@ class TradingBot():
             print(self.bars_df.tail())
 
         else: # fetch deltas to minimize data called via api
+
+            # set index if timestamp is not set as index
+            if 'timestamp' in self.bars_df.tail.columns:
+                self.bars_df = self.bars_df.set_index('timestamp')
 
             # working out how many bars to fetch
             bar_fetching_time = pd.to_datetime(datetime.now().astimezone(pytz.timezone('Europe/London')))
@@ -604,11 +608,12 @@ class TradingBot():
             # generate signal - updates self.bars_df
             self._get_crossover()
             
-            # generate orders based on signal
+            # generate orders based on signal - reset index, need timestamp column in _check_buy_sell_signals and _db_new_bar
+            self.bars_df.reset_index(inplace=True)
             self._check_buy_sell_signals()
             
-            # update bars record on database - reset index helps handing timestamp in _db_new_bar
-            self._db_new_bar(self.bars_df.reset_index().iloc[-1]) # here in order to also add info about the indicator and stop losses
+            # update bars record on database
+            self._db_new_bar(self.bars_df.iloc[-1]) # here in order to also add info about the indicator and stop losses
 
             self.logger.info('#####')
 

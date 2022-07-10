@@ -196,6 +196,30 @@ new_bot_ui = dbc.Card(
 
         html.Br(),
 
+        dbc.Col(
+            [
+                dbc.Label("Database"),
+                dcc.RadioItems(
+                    ["Local", "Server"],
+                    "Local",
+                    id="trading-bot-db-settings",
+                    inline=True,
+                    persistence=True,
+                    inputStyle={"marginRight": "3px"},
+                    labelStyle={"marginRight": "15px"}
+                )
+            ],
+            width=6
+        ),
+
+
+        dcc.Store(
+            id="trading-db-settings-store", 
+            storage_type="memory"
+        ),
+
+        html.Br(),
+
         dbc.Row(
             [
                 dbc.Col(

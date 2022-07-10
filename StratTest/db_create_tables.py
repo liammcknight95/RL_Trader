@@ -109,5 +109,5 @@ if __name__ == '__main__':
     sys.path.append(p)
 
     import config
-    config_parameters = config.pg_db_configuration()
+    config_parameters = config.pg_db_configuration(location='server') # usually run outside container
     create_tables(config_parameters)

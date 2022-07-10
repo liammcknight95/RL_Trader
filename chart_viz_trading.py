@@ -18,6 +18,37 @@ import docker
 from docker.types import Mount
 import time
 
+os.environ["DOCKER_HOST"] = "ssh://root@139.162.235.36" 
+# pg_db_configuration = config.pg_db_configuration(location='local')
+
+# databse configuration options
+@callback(
+    Output("trading-db-settings-store", "data"),
+    Input("trading-bot-db-settings", "value"),
+    # prevent_initial_call=True
+)
+def get_db_configurations(config_type):
+    ''' Select whether to authenticate to db local instance or the serer one. Useful for 
+        development and debugging.
+    '''
+    try:
+        print(config_type)
+        if config_type=='Local':
+            pg_db_configuration = config.pg_db_configuration(location='local')
+        elif config_type=='Server':
+            pg_db_configuration = config.pg_db_configuration(location='server')
+
+        # needs to be a json serializable object
+        pg_db_configuration_dict = {}
+        for key in pg_db_configuration.keys():
+            pg_db_configuration_dict[key] = pg_db_configuration[key]
+
+        return pg_db_configuration_dict#json.dumps(pg_db_configuration_dict)
+    except Exception as e:
+        print(e)
+        return {}
+
+
 def new_container(client, fun_bot_name):
     ''' Recursive function that tries to create a container with a random name,
         handling cases where an active container name is picked a second time.
@@ -67,9 +98,10 @@ def new_container(client, fun_bot_name):
     State("trading-bot-stop-loss-type", "value"),
     State("bot-strategy-param-1", "value"),
     State("bot-strategy-param-2", "value"),
+    State("trading-db-settings-store", "data"),
     prevent_initial_call=True
 )
-def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange_subaccount, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange_subaccount, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2, pg_db_configuration):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -81,7 +113,8 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
         try:
             # spin up a new bot
             # new container
-            client = docker.from_env() # docker client
+            client = docker.from_env(use_ssh_client=True) # docker client ssh://docker-user@host1.example.com
+            # client = docker.DockerClient(base_url="ssh://root@139.162.235.36")
             container_obj = new_container(client, random.choice(fun_bot_names)) # ui name for bot returned
             fun_bot_name = container_obj.name
             fun_bot_id = container_obj.id
@@ -108,6 +141,9 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
                 "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
                 "--cntr_name", f"{fun_bot_name}"# container name where bot is running - not unique
             ]
+
+            print(' '.join(command_list))
+            
             exec_results = container_obj.exec_run(
                 cmd=command_list,
                 stdin=True, # -i
@@ -118,6 +154,7 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
             message = f"CREATED new {pair}, exec results: {exec_results}, Bot at {datetime.now().isoformat()}. . Name:{fun_bot_name}"
         
         except Exception as e:
+            print(e)
             message = f"Bot NOT created, check the inputs"
 
     # if a bot is being deleted - ie a btn liquidate has actually been clicked
@@ -129,11 +166,11 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
             print("in liquidate bot block", deleted_bot_unique_id)
 
             # get program id and container id using bot_id from - button id contains bot id that is used in database
-            delete_bot_df = db_update.select_single_bot(config.pg_db_configuration(), bot_id=deleted_bot_unique_id)
+            delete_bot_df = db_update.select_single_bot(pg_db_configuration, bot_id=deleted_bot_unique_id)
             delete_bot_df_pid, delete_bot_container_id, bot_container_name = delete_bot_df["bot_script_pid"].values[0], delete_bot_df["bot_container_id"].values[0], delete_bot_df["bot_container_name"].values[0]
             print("container id: ", delete_bot_container_id, "pid: ", delete_bot_df_pid)
             # get a container object, execture program to kill bot process and finally kill container
-            client = docker.from_env() # docker client
+            client = docker.from_env(use_ssh_client=True) # docker client
             delete_bot_container_obj = client.containers.get(delete_bot_container_id)
             delete_bot_container_obj.exec_run(f"kill -SIGINT {delete_bot_df_pid}") # simulates KeyboardInterrupt
             time.sleep(5) # allow some time for bot termination protocol
@@ -156,15 +193,17 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
     Input("trading-amend-bot-message", "children"),
     Input("trading-live-bots-interval-refresh", "n_intervals"),
     State("trading-live-bots-element-python-list", "data"),
+    State("trading-db-settings-store", "data"),
+    prevent_initial_call=True
 )
-def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bots_list):
+def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bots_list, pg_db_configuration):
     ''' Refresh running bots ui, the presence of a list with stored UI elements is there to avoid
         too many unnecessary refreshes. With many bots refreshing slightly asynchronously on different 
         containers, it will likely lead to a refesh every 5 seconds anyway
     '''
 
     live_bots_ui_children = []
-    active_bots_df = db_update.select_active_bots_status(config.pg_db_configuration())
+    active_bots_df = db_update.select_active_bots_status(pg_db_configuration)
     # TODO: group all info and issue related to a certain bot in 1 row
 
     active_bots_df["bot_description"] = active_bots_df["bot_container_name"].astype(str) + \
@@ -212,14 +251,16 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
     Output("trading-running-orders-element-python-list", "data"),
     Input("trading-live-bots-interval-refresh", "n_intervals"),
     State("trading-running-orders-element-python-list", "data"),
+    State("trading-db-settings-store", "data"),
+    prevent_initial_call=True
 )
-def populate_recent_bot_orders(refresh_live_bots, existing_orders_list):
+def populate_recent_bot_orders(refresh_live_bots, existing_orders_list, pg_db_configuration):
     ''' Refresh recent orders ui, the presence of a list with stored UI elements is there to avoid
         too many unnecessary refreshes. With many bots refreshing slightly asynchronously on different 
         containers, it will likely lead to a refesh every 5 seconds anyway
     '''
     running_orders_ui_children = []
-    running_orders_df = db_update.select_running_orders(config.pg_db_configuration())
+    running_orders_df = db_update.select_running_orders(pg_db_configuration)
     running_orders_df["order_description"] = running_orders_df["bot_container_name"].astype(str) + \
     ": " + running_orders_df["bot_exchange"] + \
     " - " + running_orders_df["order_timestamp_placed"].astype(str)
@@ -283,9 +324,10 @@ def populate_non_zero_balances(bots_list, exchange_subaccount):
     Output("trading-live-bots-px-chart", "figure"),
     Input({"type": "trading-bot-btn-plot", "index": ALL}, "n_clicks"),
     State("trading-live-bots-modal", "is_open"),
+    State("trading-db-settings-store", "data"),
     prevent_initial_call=True
 )
-def plot_strategy_data(show_data_btn, modal_is_open):
+def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
@@ -295,7 +337,7 @@ def plot_strategy_data(show_data_btn, modal_is_open):
     
         if modal_is_open:
             plot_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
-            data = db_update.select_bot_distinct_bars(plot_bot_unique_id, config.pg_db_configuration())
+            data = db_update.select_bot_distinct_bars(plot_bot_unique_id, pg_db_configuration)
             print(data.head(2))
             figure = bot_plots.live_bot_strategy(data, ['bar_param_1', 'bar_param_2'])
             # TODO finish plotting - get params dynamically

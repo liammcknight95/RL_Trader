@@ -55,7 +55,7 @@ bot_script_path = '.'
 image_name = 'bot_image_1.04'
 # host
 # volumes
-abs_path_logger = os.getcwd()
+abs_path_logger = '/root/fed_rlt/RL_Trader'#os.getcwd()
 fun_bot_names  = [
     'Halie',
     'FlyingDroid',
