@@ -4,7 +4,7 @@ from datetime import datetime
 import os, signal, uuid
 from subprocess import Popen, call
 import dash_bootstrap_components as dbc
-from chart_viz_config import bot_script_path, fun_bot_names, image_name, abs_path_logger, currencies_mapping, strategies
+from chart_viz_config import bot_script_path, fun_bot_names, image_name, abs_path_logger_local, abs_path_logger, currencies_mapping, strategies
 from chart_viz_trading_layout import new_bot_info, new_order_info, new_balance_fetched
 from chart_viz_strategy_inputs_layout import dynamic_strategy_controls
 from StratTest import db_update_tables as db_update
@@ -18,7 +18,7 @@ import docker
 from docker.types import Mount
 import time
 
-os.environ["DOCKER_HOST"] = "ssh://root@139.162.235.36" 
+# os.environ["DOCKER_HOST"] = f"ssh://root@{configssh_server_ip_address}" 
 # pg_db_configuration = config.pg_db_configuration(location='local')
 
 # databse configuration options
@@ -33,10 +33,7 @@ def get_db_configurations(config_type):
     '''
     try:
         print(config_type)
-        if config_type=='Local':
-            pg_db_configuration = config.pg_db_configuration(location='local')
-        elif config_type=='Server':
-            pg_db_configuration = config.pg_db_configuration(location='server')
+        pg_db_configuration = config.pg_db_configuration(location=config_type)
 
         # needs to be a json serializable object
         pg_db_configuration_dict = {}
@@ -49,7 +46,7 @@ def get_db_configurations(config_type):
         return {}
 
 
-def new_container(client, fun_bot_name):
+def new_container(client, fun_bot_name, abs_path_logger):
     ''' Recursive function that tries to create a container with a random name,
         handling cases where an active container name is picked a second time.
     '''
@@ -77,7 +74,7 @@ def new_container(client, fun_bot_name):
         if 'You have to remove (or rename)' in str(e):
             print('name clash, chosing another name...')
             fun_bot_name = random.choice(fun_bot_names)
-            return new_container(client, fun_bot_name)
+            return new_container(client, fun_bot_name, abs_path_logger)
 
         else: 
             print(e, 'container never created')
@@ -98,24 +95,33 @@ def new_container(client, fun_bot_name):
     State("trading-bot-stop-loss-type", "value"),
     State("bot-strategy-param-1", "value"),
     State("bot-strategy-param-2", "value"),
+    State("trading-bot-db-settings", "value"),
     State("trading-db-settings-store", "data"),
     prevent_initial_call=True
 )
-def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange_subaccount, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2, pg_db_configuration):
+def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange_subaccount, pair, owned_ccy_size, opening_position, strategy, frequency, sl_bps, sl_type, strategy_param_1, strategy_param_2, config_type, pg_db_configuration):
 
     ctx_id = callback_context.triggered[0]['prop_id']
     ctx_value = callback_context.triggered[0]['value']
     print('bot msg', callback_context.triggered)
-
+    print(config_type)
     # if a new bot is being created
     if ctx_id.split('.')[0] == "trading-new-bot":
 
         try:
             # spin up a new bot
             # new container
-            client = docker.from_env(use_ssh_client=True) # docker client ssh://docker-user@host1.example.com
-            # client = docker.DockerClient(base_url="ssh://root@139.162.235.36")
-            container_obj = new_container(client, random.choice(fun_bot_names)) # ui name for bot returned
+            if config_type == 'local': 
+                print('in local block')
+                os.environ["DOCKER_HOST"] = ""
+                client = docker.from_env()
+                path_logger=abs_path_logger_local
+            elif config_type == 'server': 
+                os.environ["DOCKER_HOST"] = f"ssh://root@{config.ssh_server_ip_address}" 
+                client = docker.from_env(use_ssh_client=True)
+                path_logger=abs_path_logger
+
+            container_obj = new_container(client, random.choice(fun_bot_names), path_logger) # ui name for bot returned
             fun_bot_name = container_obj.name
             fun_bot_id = container_obj.id
             print(fun_bot_name, fun_bot_id)
@@ -139,7 +145,8 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
                 f"--{strategies[strategy]['ids'][0]}", f"{strategy_param_1}", # bot ui element strategy 1
                 f"--{strategies[strategy]['ids'][1]}", f"{strategy_param_2}", # bot ui element strategy 2
                 "--cntr_id", f"{fun_bot_id}",# container id where bot is running - unique
-                "--cntr_name", f"{fun_bot_name}"# container name where bot is running - not unique
+                "--cntr_name", f"{fun_bot_name}",# container name where bot is running - not unique
+                "--database_setup", f"{config_type}" # type of database connectivity setup
             ]
 
             print(' '.join(command_list))
@@ -170,7 +177,13 @@ def handle_active_bots_universe(n_click_new_bot, n_click_liquidate_bot, exchange
             delete_bot_df_pid, delete_bot_container_id, bot_container_name = delete_bot_df["bot_script_pid"].values[0], delete_bot_df["bot_container_id"].values[0], delete_bot_df["bot_container_name"].values[0]
             print("container id: ", delete_bot_container_id, "pid: ", delete_bot_df_pid)
             # get a container object, execture program to kill bot process and finally kill container
-            client = docker.from_env(use_ssh_client=True) # docker client
+            # client = docker.from_env(use_ssh_client=True) # docker client
+            if config_type == 'local': 
+                os.environ["DOCKER_HOST"] = ""
+                client = docker.from_env()
+            elif config_type == 'server': 
+                os.environ["DOCKER_HOST"] = f"ssh://root@{config.ssh_server_ip_address}" 
+                client = docker.from_env(use_ssh_client=True)
             delete_bot_container_obj = client.containers.get(delete_bot_container_id)
             delete_bot_container_obj.exec_run(f"kill -SIGINT {delete_bot_df_pid}") # simulates KeyboardInterrupt
             time.sleep(5) # allow some time for bot termination protocol

@@ -81,6 +81,7 @@ def create_tables(config_parameters):
                 ON DELETE CASCADE
         )
         """,
+        # the timezone does not seem to be sec correctly when creating a new db
         """ 
         SET timezone = 'Europe/London';
         """

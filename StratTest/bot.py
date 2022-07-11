@@ -11,6 +11,7 @@ import json
 import signal, sys, os
 import pytz
 import math
+from chart_viz_config import app_timezone
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
 # engine and make sure there's no gaps
@@ -63,7 +64,7 @@ class TradingBot():
             self.sl_pctg = sl_pctg
             self.params = params
             self.in_position = False
-            self.signal_time = pd.Timestamp(datetime.now()).tz_localize('utc').tz_convert('Europe/London') # initiate signal time, updated throughout bot life
+            self.signal_time = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone) # initiate signal time, updated throughout bot life
             self.owned_ccy_size = owned_ccy_size
             self.opening_position = opening_position
             self.sl_price = None
@@ -164,7 +165,7 @@ class TradingBot():
 
     def _db_new_order(self, order):
         order_id = 'order-' + str(uuid.uuid4())
-        order_timestamp_placed = pd.to_datetime(order['datetime']).tz_convert('Europe/London') # TODO have timezone in configuration
+        order_timestamp_placed = pd.to_datetime(order['datetime']).tz_convert(app_timezone) # TODO have timezone in configuration
         order_price_placed = order['price']
         order_quantity_placed = order['amount']
         order_direction = order['side']
@@ -308,7 +309,7 @@ class TradingBot():
 
     def _db_new_health_status(self, health_status, err):
 
-        health_status_timestamp = datetime.now().isoformat()
+        health_status_timestamp = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone)
 
         fields = [
             self.bot_id,
@@ -327,7 +328,7 @@ class TradingBot():
 
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']).sort_values(by='timestamp')
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df['timestamp'] = df['timestamp'].dt.tz_localize('utc').dt.tz_convert('Europe/London') # localize to utc and then convert to London tz
+        df['timestamp'] = df['timestamp'].dt.tz_localize('utc').dt.tz_convert(app_timezone) # localize to utc and then convert to London tz
         df = df.set_index('timestamp') # useful to have timestamp index for the engine
         return df
 
@@ -339,7 +340,7 @@ class TradingBot():
 
             bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=300) # most recent candle keeps evolving
             self.bars_df = self._clean_bars_response(bars)
-            self.bars_fetched_at_timestamp = datetime.now() # used for database, logging and df delta checks
+            self.bars_fetched_at_timestamp = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone) # used for database, logging and df delta checks
             self.logger.info(f"Succesfully fetched initial {300} bars at {self.bars_fetched_at_timestamp.isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
             print(f'Initial df update, fetching {300} bars')
             print(self.bars_df.tail())
@@ -351,7 +352,7 @@ class TradingBot():
                 self.bars_df = self.bars_df.set_index('timestamp')
 
             # working out how many bars to fetch
-            bar_fetching_time = pd.to_datetime(datetime.now().astimezone(pytz.timezone('Europe/London')))
+            bar_fetching_time = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone)
             last_existing_bar_time = self.bars_df.index.max()
             minutes_since_last_bar = (bar_fetching_time - last_existing_bar_time).seconds / 60 # elapsed time since last fetched bar
             
@@ -360,7 +361,7 @@ class TradingBot():
             # number of new bars to fetch: if 1 is current bar refreshed, if 2 means that new bar has started
             limit_bars_fetch = math.ceil(minutes_since_last_bar / freq_in_minutes) # ceil rounds up the number of bars to fetch
             delta_bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=limit_bars_fetch)
-            self.bars_fetched_at_timestamp = datetime.now()
+            self.bars_fetched_at_timestamp = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone)
             self.logger.info(f"Succesfully fetched {limit_bars_fetch} delta bars")
             
             print(f"delta updated, fetched {limit_bars_fetch} bars")
@@ -538,7 +539,7 @@ class TradingBot():
                     self.create_new_order()
 
                     self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
-                    print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
+                    # print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                     self.in_position = True
                     self.signal_time = self.bars_df.loc[previous_period]['timestamp']
 
@@ -581,7 +582,7 @@ class TradingBot():
 
                     self.logger.info(f"----- SELL ORDER PLACED at {datetime.now().isoformat()}: id: {self.sell_order['id']}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
                     
-                    print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
+                    # print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
 
                     self._db_new_order(self.sell_order) # adding new order to database
 
@@ -634,7 +635,7 @@ class TradingBot():
         except Exception as err:
             print('Bot malfunctioned')
             self._db_new_health_status('MALF', str(err)) # [:100]
-            self.end_of_bot_time = datetime.now().isoformat()
+            self.end_of_bot_time = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone)
             self.logger.critical(f"Bot malfunctioned at {self.end_of_bot_time}", exc_info=True)
             self.logger.info('#####')
 
@@ -687,7 +688,7 @@ class TradingBot():
             self.logger.error("Failed closing open positions", exc_info=True)
 
     def _bot_termination_protocol(self, err):
-        self.end_of_bot_time = datetime.now().isoformat() # used to update database and in logger
+        self.end_of_bot_time = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone) # used to update database and in logger
         self.logger.critical(f"Activated bot termination protocol at {self.end_of_bot_time}", exc_info=True)
         self._cancel_bot_pending_orders()
         self._close_open_positions()

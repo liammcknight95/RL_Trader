@@ -54,6 +54,9 @@ bot_script_path = '.'
 # docker & app ui configuration
 image_name = 'bot_image_1.04'
 # host
+# timezones
+app_timezone = 'Europe/London'
+
 # volumes
 abs_path_logger = '/root/fed_rlt/RL_Trader'#
 abs_path_logger_local = os.getcwd()

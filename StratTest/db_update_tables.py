@@ -280,6 +280,7 @@ def select_active_bots_status(config_parameters):
 
     conn = psycopg2.connect(**config_parameters)
     data = pd.read_sql(sql, conn)
+    data['last_update'] = data['last_update'].dt.tz_convert('Europe/London')
     return data
 
 
