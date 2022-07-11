@@ -8,8 +8,8 @@ def create_tables(config_parameters):
                 bot_pair VARCHAR(10) NOT NULL,
                 bot_owned_ccy_start_position NUMERIC NOT NULL,
                 bot_owned_ccy_end_position NUMERIC,
-                bot_start_date TIMESTAMP NOT NULL,
-                bot_end_date TIMESTAMP,
+                bot_start_date TIMESTAMPTZ NOT NULL,
+                bot_end_date TIMESTAMPTZ,
                 bot_strategy VARCHAR(255) NOT NULL,
                 bot_strategy_parameters JSON,
                 bot_stop_loss_pctg NUMERIC,
@@ -25,8 +25,8 @@ def create_tables(config_parameters):
         CREATE TABLE IF NOT EXISTS bot_order_book_bars_tbl (
                 bar_id SERIAL PRIMARY KEY,
                 bar_bot_id VARCHAR(40),
-                bar_record_timestamp TIMESTAMP NOT NULL,
-                bar_time TIMESTAMP,
+                bar_record_timestamp TIMESTAMPTZ NOT NULL,
+                bar_time TIMESTAMPTZ,
                 bar_open NUMERIC,
                 bar_high NUMERIC,
                 bar_low NUMERIC,
@@ -49,7 +49,7 @@ def create_tables(config_parameters):
         CREATE TABLE IF NOT EXISTS bot_orders_tbl (
                 order_id VARCHAR(42) PRIMARY KEY,
                 order_bot_id VARCHAR(40),
-                order_timestamp_placed TIMESTAMP NOT NULL,
+                order_timestamp_placed TIMESTAMPTZ NOT NULL,
                 order_price_placed NUMERIC NOT NULL,
                 order_quantity_placed NUMERIC NOT NULL,
                 order_direction TEXT,
@@ -73,13 +73,16 @@ def create_tables(config_parameters):
         CREATE TABLE IF NOT EXISTS bot_health_status_tbl (
             health_status_id SERIAL PRIMARY KEY,
             health_status_bot_id VARCHAR(40),
-            health_status_timestamp TIMESTAMP NOT NULL,
+            health_status_timestamp TIMESTAMPTZ NOT NULL,
             health_status TEXT NOT NULL, 
             health_status_error TEXT,
             FOREIGN KEY (health_status_bot_id)
                 REFERENCES bot_bots_tbl (bot_id)
                 ON DELETE CASCADE
         )
+        """,
+        """ 
+        SET timezone = 'Europe/London';
         """
     )
 
@@ -109,5 +112,5 @@ if __name__ == '__main__':
     sys.path.append(p)
 
     import config
-    config_parameters = config.pg_db_configuration(location='server') # usually run outside container
+    config_parameters = config.pg_db_configuration(location='local') # usually run outside container
     create_tables(config_parameters)

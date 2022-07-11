@@ -39,6 +39,8 @@ if __name__=='__main__':
     parser.add_argument("--cntr_id", type=str, default=None, help="id of container where the bot is running")
     parser.add_argument("--cntr_name", type=str, default=None, help="name of container where the bot is running")
 
+    parser.add_argument("--database_setup", type=str, help="type of setup depending on where the code is executed: server with port forwarding or local within container")
+
     args = parser.parse_args()
 
     exchange_subaccount = args.exchange_subaccount
@@ -52,6 +54,7 @@ if __name__=='__main__':
     window_dev = args.window_dev
     container_id = args.cntr_id
     container_name = args.cntr_name
+    database_setup = args.database_setup
 
     frequency = args.frequency
     sl_type = args.sl_type
@@ -95,7 +98,8 @@ if __name__=='__main__':
         window_dev=window_dev,
         sandbox=False,
         container_id=container_id,
-        container_name=container_name
+        container_name=container_name,
+        database_setup=database_setup
     )
 
     schedule.every(10).seconds.do(trading_bot.run_bot)

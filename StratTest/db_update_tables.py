@@ -168,19 +168,26 @@ def insert_health_status_table(fields, config_parameters):
 # TODO update order quantity filled
 
 ## SELECT QUERIES
-def select_all_bot_orders(bot_id, config_parameters):
+def select_all_bot_orders(bot_id, order_statuses, config_parameters):
     sql = f"""
     SELECT 
         order_id, 
         order_bot_id,
         order_exchange_trade_id,
+        order_timestamp_placed,
         order_status,
-        order_quantity_filled
+        order_price_filled,
+        order_quantity_filled,
+        order_direction,
+        order_price_placed,
+        order_ob_ask_price,
+        order_ob_bid_price
     FROM 
         bot_orders_tbl
     WHERE 
         order_bot_id = '{bot_id}' AND
-        (order_status = 'dormant' OR order_status = 'partialled')
+        order_status IN {order_statuses}
+        --(order_status = 'dormant' OR order_status = 'partialled')
     """
 
     conn = psycopg2.connect(**config_parameters)

@@ -24,7 +24,7 @@ print('##### bot.py', os.getpid())
 
 class TradingBot():
 
-    def __init__(self, exchange_subaccount, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, opening_position, container_id, container_name, sandbox=True, **params):
+    def __init__(self, exchange_subaccount, pair, strategy, frequency, sl_type, sl_pctg, owned_ccy_size, opening_position, container_id, container_name, database_setup, sandbox=True, **params):
         ''' 
             exchange_subaccount: str - name of exchange subaccount used for the strategy
             pair: str - currency pair the bot is trading
@@ -51,8 +51,9 @@ class TradingBot():
             )
             self.exchange.set_sandbox_mode(sandbox)
 
-            ## Database connectivity
-            self.db_config_parameters = config.pg_db_configuration(location='server')
+            ## Database connectivity - handle local/local-docker duality
+            if database_setup == 'local': database_setup = 'local_docker'
+            self.db_config_parameters = config.pg_db_configuration(location=database_setup)
 
             self.pair = pair
             self.strategy = strategy
@@ -62,14 +63,14 @@ class TradingBot():
             self.sl_pctg = sl_pctg
             self.params = params
             self.in_position = False
-            self.signal_time = pd.Timestamp(datetime.now()) # initiate signal time, updated throughout bot lif
+            self.signal_time = pd.Timestamp(datetime.now()).tz_localize('utc').tz_convert('Europe/London') # initiate signal time, updated throughout bot life
             self.owned_ccy_size = owned_ccy_size
             self.opening_position = opening_position
             self.sl_price = None
             self.container_id = container_id
             self.container_name = container_name
             self.bars_df = pd.DataFrame()
-            self._db_new_bot() # add new bot to database and define self.bot_id      
+            self._db_new_bot() # add new bot to database and define self.bot_id     
             
 
             # extract parameters generic names for bars table
@@ -103,6 +104,10 @@ class TradingBot():
                     self.in_position = True
                     self.signal_time = initial_bars_df.loc[current_period]['timestamp']
 
+                    # append bar with a "buy" trade signal
+                    self.bars_df.iloc[-1, self.bars_df.columns.get_loc(f'{self.strategy}_trades')] = 'buy' # hardcoded buy, temp replace value to append first bar
+                    self._db_new_bar(self.bars_df.reset_index().iloc[-1])
+                    
                     self._db_new_order(self.buy_order) # adding new order to database
                     self.logger.info(f"----- Opening BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
 
@@ -300,6 +305,22 @@ class TradingBot():
         # create new orderbook record
         db_update.insert_order_book_bars_table(fields, self.db_config_parameters)
 
+
+    def _db_new_health_status(self, health_status, err):
+
+        health_status_timestamp = datetime.now().isoformat()
+
+        fields = [
+            self.bot_id,
+            health_status_timestamp,
+            health_status,
+            err
+        ]
+
+        # create new api health status database record
+        db_update.insert_health_status_table(fields, self.db_config_parameters)
+
+
     @staticmethod
     def _clean_bars_response(bars):
         ''' Convert bars api response into a dataframe, sort it and handle timestamp conversion '''
@@ -355,21 +376,6 @@ class TradingBot():
                 # means that more than 1 bar has been fetched, either new bar or bot fell behind
                 self.bars_df = self.bars_df.iloc[limit_bars_fetch-1: , :] # drop top dataframe rows 1 in excess of limit_bars_fetch
                 print(self.bars_df.tail())
-            
-
-    def _db_new_health_status(self, health_status, err):
-
-        health_status_timestamp = datetime.now().isoformat()
-
-        fields = [
-            self.bot_id,
-            health_status_timestamp,
-            health_status,
-            err
-        ]
-
-        # create new api health status database record
-        db_update.insert_health_status_table(fields, self.db_config_parameters)
 
 
     def _get_crossover(self, plot=False):
@@ -473,28 +479,34 @@ class TradingBot():
             if the exception is not a known one, activate the termination protocle and leave the bot
         '''
         if type(e).__name__ == 'BadSymbol':
-            print('handling bad simble excp', e, ' ', type(e).__name__)
+            self.logger.error(f'handling bad simble excp, {e}, {type(e).__name__}', exc_info=True)
             raise
 
         elif type(e).__name__ == 'InsufficientFunds':
             # insufficient funds
-            print('insufficient funds error: ', e)
+            self.logger.error(f'insufficient funds error: {e}', exc_info=True)
             raise
 
         elif type(e).__name__ == 'InvalidOrder':
             # invalid order, ie Minimum order size is 10.0 GBP
-            print('InvalidOrder error', e)
+            self.logger.error(f'InvalidOrder error: {e}', exc_info=True)
             raise
 
         elif type(e).__name__ == 'ExchangeError':
             # errors such as price more than 20% above mkt price
-            print('exchange error', e)
+            self.logger.error(f'exchange error: {e}', exc_info=True)
+            raise
+
+        elif type(e).__name__ == 'ExchangeNotAvailable':
+            # errors such as price more than 20% above mkt price
+            self.logger.error(f'Network error, exchange not available: {e}', exc_info=True)
             raise
 
         else:
-            # in case of unaught exception, better to abort the bot
-            print('other uncaught: ', e, ' ', type(e).__name__)
-            self._bot_termination_protocol(e)
+            # in case of unaught exception, just log the error and carry on - for now
+            self.logger.error(f'other uncaught: , {e}, {type(e).__name__}', exc_info=True)
+            raise
+            # self._bot_termination_protocol(e)
             
 
     ## TODO ORDER MANAGEMENT METHOD:
@@ -632,7 +644,7 @@ class TradingBot():
         ''' When trading bot fails or is terminated, cancel all pending orders '''
         try:
             # get all open orders for this bot and cancel
-            pending_orders_df = db_update.select_all_bot_orders(self.bot_id, self.db_config_parameters)
+            pending_orders_df = db_update.select_all_bot_orders(self.bot_id, order_statuses=('dormant', 'partialled'), config_parameters=self.db_config_parameters)
             pending_orders_id = pending_orders_df['order_id'].tolist()
             for order_id in pending_orders_id:
                 self.exchange.cancel_order(order_id)
