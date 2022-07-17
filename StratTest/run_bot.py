@@ -3,6 +3,7 @@ import sys, os, signal
 sys.path.append('/'.join(os.getcwd().split('/')[:-1]))
 import schedule
 import logging
+from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 import config
 import time
@@ -62,13 +63,22 @@ if __name__=='__main__':
     owned_ccy_size = args.owned_ccy_size
     opening_position = args.opening_position
 
-    # Call getLogger with no args to set up the handler
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    try:
+        # Call getLogger with no args to set up the handler
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
 
-    logger_name = f'{strategy} logger - {datetime.now().isoformat()}'
-    logger.addHandler(logging.FileHandler(f'{config.directory_path}/StratTest/Logging/{logger_name}.log'))
+        logger_name = f'{strategy} logger - {datetime.now().isoformat()}'
+        
+        fh = TimedRotatingFileHandler(f'{config.directory_path}/StratTest/Logging/{logger_name}.log', when='midnight') # file handler
 
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+
+        logger.addHandler(fh)
+    except Exception as e:
+        print(e)
+        raise
 
     # Before launching the strategy, assert that parameters are fine
     try:
