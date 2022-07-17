@@ -254,6 +254,7 @@ def select_active_bots_status(config_parameters):
             bots.bot_strategy,
             bots.bot_freq,
             bots.bot_stop_loss_pctg,
+            bots.bot_strategy_parameters,
 			health.health_status,
 			health.health_status_error,
 			health.last_update
@@ -280,7 +281,12 @@ def select_active_bots_status(config_parameters):
 
     conn = psycopg2.connect(**config_parameters)
     data = pd.read_sql(sql, conn)
-    data['last_update'] = data['last_update'].dt.tz_convert('Europe/London')
+    if data.shape[0]>0:
+        try:
+            data['last_update'] = data['last_update'].dt.tz_convert('Europe/London')
+        except:
+            # not a valid datetime yet
+            data['last_update'] = data['last_update']
     return data
 
 
@@ -334,7 +340,7 @@ def select_bot_distinct_bars(bot_id, config_parameters):
     ''' query that returns the vary last update for each bar stored in the database per bot '''
 
     sql = f''' 
-    SELECT DISTINCT ON (bar_time) 
+    SELECT DISTINCT ON (bar_time, bar_action) 
         bar_time, 
         bar_record_timestamp,
         bar_open,
@@ -355,7 +361,9 @@ def select_bot_distinct_bars(bot_id, config_parameters):
         bar_bot_id = '{bot_id}' 
     ORDER BY 
         bar_time ASC, 
+        bar_action ASC,
         bar_record_timestamp DESC
+        
     '''
 
 

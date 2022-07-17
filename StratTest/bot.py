@@ -57,6 +57,7 @@ class TradingBot():
             self.db_config_parameters = config.pg_db_configuration(location=database_setup)
 
             self.pair = pair
+            self.initial_bar_fetch_size = 300
             self.strategy = strategy
             # self.indicator = indicator
             self.frequency = frequency
@@ -338,12 +339,10 @@ class TradingBot():
 
         if self.bars_df.shape[0] == 0: # initial fetch
 
-            bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=300) # most recent candle keeps evolving
+            bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=self.initial_bar_fetch_size) # most recent candle keeps evolving
             self.bars_df = self._clean_bars_response(bars)
             self.bars_fetched_at_timestamp = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone) # used for database, logging and df delta checks
-            self.logger.info(f"Succesfully fetched initial {300} bars at {self.bars_fetched_at_timestamp.isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
-            print(f'Initial df update, fetching {300} bars')
-            print(self.bars_df.tail())
+            self.logger.info(f"Succesfully fetched initial {self.initial_bar_fetch_size} bars at {self.bars_fetched_at_timestamp.isoformat()}. Last bar: {self.bars_df.iloc[-1].to_dict()}")
 
         else: # fetch deltas to minimize data called via api
 
@@ -359,8 +358,8 @@ class TradingBot():
             freq_in_minutes = int(self.frequency .replace('m', '')) # translate minute frequency into integer numbeer of minutes
 
             # number of new bars to fetch: if 1 is current bar refreshed, if 2 means that new bar has started
-            limit_bars_fetch = math.ceil(minutes_since_last_bar / freq_in_minutes) # ceil rounds up the number of bars to fetch
-            delta_bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=limit_bars_fetch)
+            limit_bars_fetch = math.ceil(minutes_since_last_bar / freq_in_minutes) + 5 # ceil rounds up the number of bars to fetch - +5 to make extra sure no bars are lost
+            delta_bars = self.exchange.fetch_ohlcv(self.pair, timeframe=self.frequency, limit=limit_bars_fetch) #
             self.bars_fetched_at_timestamp = pd.Timestamp(datetime.now(pytz.utc)).tz_convert(app_timezone)
             self.logger.info(f"Succesfully fetched {limit_bars_fetch} delta bars")
             
@@ -370,13 +369,17 @@ class TradingBot():
             # replace dataframe part re-fetched
             self.bars_df = self.bars_df.loc[~(self.bars_df.index.isin(delta_bars_df.index))] # drop old rows
             self.bars_df = pd.concat([self.bars_df, delta_bars_df], axis=0) # append new ones
-            print(self.bars_df.tail())
+            self.bars_df.sort_index(inplace=True) # after stacking the 2 df, sort index timestamp
 
-            if limit_bars_fetch > 1: 
+            if self.bars_df.shape[0] > self.initial_bar_fetch_size: 
                 print('in limit_bars_fetch > 1')
-                # means that more than 1 bar has been fetched, either new bar or bot fell behind
-                self.bars_df = self.bars_df.iloc[limit_bars_fetch-1: , :] # drop top dataframe rows 1 in excess of limit_bars_fetch
-                print(self.bars_df.tail())
+                bars_to_drop = self.bars_df.shape[0] - self.initial_bar_fetch_size
+                # if shape of dataframe exceeds the initial fetch size, drop elements at the top
+                self.bars_df = self.bars_df.iloc[bars_to_drop: , :] # drop top dataframe rows 1 in excess of limit_bars_fetch
+                self.logger.info(f"Dropped {bars_to_drop} rows")
+
+        self.logger.info(f"Current bars df shape: {self.bars_df.shape}. Tail:")
+        self.logger.info(self.bars_df.tail(7).to_string())
 
 
     def _get_crossover(self, plot=False):
@@ -536,17 +539,15 @@ class TradingBot():
                 if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==1 and self.bars_df.loc[previous_period]['timestamp']>self.signal_time:
                     # if signal is 1 and has been generated on a new bar - new timestamp, allows for signal confirmation
 
-                    self.create_new_order()
-
-                    self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
+                    self.create_new_order()                    
                     # print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                     self.in_position = True
                     self.signal_time = self.bars_df.loc[previous_period]['timestamp']
-
                     self._db_new_order(self.buy_order) # adding new order to database
+                    self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
                 else:
                     self.logger.info(f"No new orders. Current position: {self.in_position}")
-
+                    self.logger.info(f"Current period: {current_period}, Previous period: {previous_period}, Current period ts: {self.bars_df.loc[current_period]['timestamp']}, Previous period ts: {self.bars_df.loc[previous_period]['timestamp']}, self.signal_time: {self.signal_time}")
         
         elif self.in_position:
 
@@ -593,6 +594,7 @@ class TradingBot():
 
                 else:
                     self.logger.info(f"Order still open, keep cruising. Current position: {self.in_position}. Stop loss level: {self.sl_price}")
+                    self.logger.info(f"Current period: {current_period}, Previous period: {previous_period}, Current period ts: {self.bars_df.loc[current_period]['timestamp']}, Previous period ts: {self.bars_df.loc[previous_period]['timestamp']}, self.signal_time: {self.signal_time}")
             
 
             else:
