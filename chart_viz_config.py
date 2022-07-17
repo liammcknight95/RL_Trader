@@ -5,7 +5,34 @@ import os
 # naming convention: EXCHANGENAME_SUBACCOUNTNAME
 ccxt_exchanges = ['BITSTAMP_MAIN', 'BITSTAMP_BTCEMA']
 
-currencies = ['USDT_BTC', 'BTC_AAVE', 'USDT_SUSHI']
+currencies = [
+    'BTC_ADA',
+    'BTC_AVE',
+    'USDT_AAVE',
+    'USDT_ADA',
+    'USDT_APE',
+    'USDT_AVAX',
+    'USDT_AXS',
+    'USDT_BTC', 
+    'USDT_CHZ',
+    'USDT_COMP',
+    'USDT_CRV',
+    'USDT_CTSI',
+    'USDT_DAI',
+    'USDT_FTM', 
+    'USDT_FTT',
+    'USDT_GRT',
+    'USDT_LINK',
+    'USDT_MANA',
+    'USDT_MATIC',
+    'USDT_PAX',
+    'USDT_SAND',
+    'USDT_SHIB',
+    'USDT_SUSHI',
+    'USDT_UNI',
+    # 'USDT_XLM', # only bull bear
+    'USDT_XRP'
+]
 
 # mapping anchored to poloniex symbols used for data backtesting pipeline
 currencies_mapping = {

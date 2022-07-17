@@ -225,7 +225,8 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
     " - " + active_bots_df["bot_owned_ccy_start_position"].astype(str) + \
     " - " + active_bots_df["bot_strategy"] + \
     " - " + active_bots_df["bot_freq"] + \
-    " - " + active_bots_df["bot_stop_loss_pctg"].astype(str)
+    " - " + active_bots_df["bot_stop_loss_pctg"].astype(str) + \
+    active_bots_df['bot_strategy_parameters'].apply(lambda x: ' '.join([f" - {key}:{x[key]}" for key in x.keys() if x[key]!=-999])) # show params
 
     active_bots_df["bot_last_status"] = "Update: " + active_bots_df["last_update"].astype(str) + \
         " - Status: " + active_bots_df["health_status"] + \
@@ -350,9 +351,10 @@ def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
     
         if modal_is_open:
             plot_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
-            data = db_update.select_bot_distinct_bars(plot_bot_unique_id, pg_db_configuration)
-            print(data.head(2))
-            figure = bot_plots.live_bot_strategy(data, ['bar_param_1', 'bar_param_2'])
+            bars_df = db_update.select_bot_distinct_bars(plot_bot_unique_id, pg_db_configuration)
+            orders_df = db_update.select_all_bot_orders(plot_bot_unique_id, ('filled', 'pending', ), pg_db_configuration)
+            print(bars_df.head(2))
+            figure = bot_plots.live_bot_strategy(bars_df, orders_df, ['bar_param_1', 'bar_param_2'])
             # TODO finish plotting - get params dynamically
         # else:
         #     figure = {}
