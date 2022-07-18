@@ -473,7 +473,7 @@ class TradingBot():
             self.orders_error_handling(e)
             self.logger.error(f'### Order NOT place correctly due to the following exception: {type(e).__name__} - {e}')
         
-        # set initial stop loss
+        # set initial stop loss NOTE might need to be adjusted with trailing/dynamic logic
         self.sl_price = self.buy_order['price'] * (1 - self.sl_pctg)
 
 
@@ -557,17 +557,31 @@ class TradingBot():
                 # if in position and order has been executed monitor price level and adjust stop loss level accordingly
                 # if one of the 2 conditions is hit, close the position with a market order
 
-                if self.sl_type == 'trailing' and self.current_price > self.previous_price and self.current_price > self.order_price:
-                    # with trailing stop loss, if live order, update stop loss price if trade currently in profit
-                    # since stop loss might update at different snaps of current bar, we need additional condition
-                    # to make that stop loss price never "worsens" TODO: check if this extra condition can be added in the first if block
-                    potential_new_sl_price = self.current_price * (1 - self.sl_pctg)
+                if self.current_price > self.previous_price and self.current_price > self.order_price:
+
+                    if self.sl_type == 'trailing': 
+                        # with trailing stop loss, if live order, update stop loss price if trade currently in profit
+                        # since stop loss might update at different snaps of current bar, we need additional condition
+                        # to make that stop loss price never "worsens" TODO: check if this extra condition can be added in the first if block
+                        potential_new_sl_price = self.current_price * (1 - self.sl_pctg)
+
+                    elif self.sl_type == 'dynamic':
+                        # stop loss calculated on a dynamic multiplier depending on recent market volatility
+                        # also designed that stop loss never "worsens" - conservative approach
+                        # *4 TODO analyze this parameter, daily makes sense?
+                        stop_loss_vol_adj_pctg = (self.sl_pctg) / (1+(self.bars_df['close'].pct_change().rolling(10, min_periods=1).std()*(260**0.5))*4)
+                        potential_new_sl_price = self.current_price * (1-(stop_loss_vol_adj_pctg.iloc[-1])) # current close price * last multiplier of the series above
+                
+                    elif self.sl_type == 'static':
+                        # if static, sl price does not change
+                        potential_new_sl_price = self.sl_price
+
+                    # update sl price if potential_new_sl_price constitutes an improvement
                     if potential_new_sl_price > self.sl_price:
                         self.sl_price = potential_new_sl_price
-                        self.logger.info(f"----- Stop loss price updated at {datetime.now().isoformat()} to: {self.sl_price} -----")
+                        self.logger.info(f"----- {self.sl_type} stop loss price updated to: {self.sl_price} -----")
 
 
-                
                 if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==-1 or self.current_price <= self.sl_price:
                     # when signal reverses, close the position with sell market order
 
