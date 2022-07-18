@@ -254,6 +254,7 @@ def select_active_bots_status(config_parameters):
             bots.bot_strategy,
             bots.bot_freq,
             bots.bot_stop_loss_pctg,
+            bots.bot_stop_loss_type,
             bots.bot_strategy_parameters,
 			health.health_status,
 			health.health_status_error,

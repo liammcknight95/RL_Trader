@@ -225,8 +225,9 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
     " - " + active_bots_df["bot_owned_ccy_start_position"].astype(str) + \
     " - " + active_bots_df["bot_strategy"] + \
     " - " + active_bots_df["bot_freq"] + \
-    " - " + active_bots_df["bot_stop_loss_pctg"].astype(str) + \
-    active_bots_df['bot_strategy_parameters'].apply(lambda x: ' '.join([f" - {key}:{x[key]}" for key in x.keys() if x[key]!=-999])) # show params
+    " - " +  active_bots_df["bot_stop_loss_type"] + " stop loss of " +\
+    (active_bots_df["bot_stop_loss_pctg"]*100).astype(str) + "%" +\
+    active_bots_df['bot_strategy_parameters'].apply(lambda x: ' '.join([f" - {key}={x[key]}" for key in x.keys() if x[key]!=-999])) # show params
 
     active_bots_df["bot_last_status"] = "Update: " + active_bots_df["last_update"].astype(str) + \
         " - Status: " + active_bots_df["health_status"] + \
@@ -335,7 +336,10 @@ def populate_non_zero_balances(bots_list, exchange_subaccount):
 # populate strategy data plotting
 @callback(
     Output("trading-live-bots-modal", "is_open"),
+    Output("trading-live-bots-modal-title", "children"),
     Output("trading-live-bots-px-chart", "figure"),
+    Output("trading-live-bots-chart-launch-dt", "children"),
+    Output("trading-live-bots-chart-last-updt-dt", "children"),
     Input({"type": "trading-bot-btn-plot", "index": ALL}, "n_clicks"),
     State("trading-live-bots-modal", "is_open"),
     State("trading-db-settings-store", "data"),
@@ -351,19 +355,28 @@ def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
     
         if modal_is_open:
             plot_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
+            static_df = db_update.select_single_bot(pg_db_configuration, bot_id=plot_bot_unique_id)
+            modal_title = static_df["bot_container_name"].astype(str) + \
+                " - " + static_df["bot_pair"] + \
+                " - " + static_df["bot_strategy"]
+
+            launch_dt_txt = f"Launch Date: {static_df['bot_start_date'].values[0]}"
+
             bars_df = db_update.select_bot_distinct_bars(plot_bot_unique_id, pg_db_configuration)
             orders_df = db_update.select_all_bot_orders(plot_bot_unique_id, ('filled', 'pending', ), pg_db_configuration)
             print(bars_df.head(2))
             figure = bot_plots.live_bot_strategy(bars_df, orders_df, ['bar_param_1', 'bar_param_2'])
+            
+            last_update_text = f"Last Updated: {bars_df.iloc[-1]['bar_record_timestamp']}"
             # TODO finish plotting - get params dynamically
         # else:
         #     figure = {}
         #     print('do nothing')
 
-        return modal_is_open, figure
+        return modal_is_open, modal_title, figure, launch_dt_txt, last_update_text
 
     else:
-        return no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update
 
 
 # handle display of symbols - manual filter - given a selected exchange

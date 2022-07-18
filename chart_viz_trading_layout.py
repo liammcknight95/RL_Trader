@@ -90,21 +90,53 @@ running_bots_ui = dbc.Card(
 
                 dbc.ModalBody(
                     dbc.Card(
-                        dcc.Graph(
-                            id="trading-live-bots-px-chart",
-                            figure={
-                                'layout': go.Layout(
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                xaxis=dict(gridcolor='#444'),
-                                yaxis=dict(gridcolor='#444'),
-                                # height=650
-                                )
-                            },
-                            # style={'height':'100%'},
-                            # className='h-100'
-                            
-                        ),
+                        [
+                            dcc.Graph(
+                                id="trading-live-bots-px-chart",
+                                figure={
+                                    'layout': go.Layout(
+                                    paper_bgcolor='rgba(0,0,0,0)',
+                                    plot_bgcolor='rgba(0,0,0,0)',
+                                    xaxis=dict(gridcolor='#444'),
+                                    yaxis=dict(gridcolor='#444'),
+                                    # height=650
+                                    )
+                                },
+                                # style={'height':'100%'},
+                                # className='h-100'
+                                
+                            ),
+
+                            dbc.Row(
+                                dbc.Col(
+                                        html.P("Launch Date: ", id="trading-live-bots-chart-launch-dt")
+                                    )
+                            ),
+
+                            dbc.Row(
+                                dbc.Col(
+                                        html.P("Last Updated: ", id="trading-live-bots-chart-last-updt-dt")
+                                    )
+                            ),
+
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        html.P("Displayed Range: "),
+                                        width='auto'
+                                    ),
+                                    dbc.Col(
+                                        dcc.DatePickerRange(
+                                            id="trading-live-bots-chart-range",
+                                            display_format='MMM Do, YY',
+                                            # min_date_allowed=date(2021, 1, 1),
+                                            persistence=False
+                                        ),
+                                    )
+                                ]
+                            ),
+
+                        ],
                         # style={ 'minHeight':'75vh', 'height':'75vh', 'maxHeight':'75vh'},#, 'height':'70%'
                         body=True,
                         className='overflow-scroll'
@@ -318,7 +350,7 @@ new_bot_ui = dbc.Card(
                             id="trading-bot-stop-loss-type",
                             className="dark-dd-border",
                             options=[
-                                {"label": sl_type, "value": sl_type} for sl_type in ["static", "trailing"]
+                                {"label": sl_type, "value": sl_type} for sl_type in ["static", "trailing", "dynamic"]
                             ],
                             value="trailing",
                             multi=False,
