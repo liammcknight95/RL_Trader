@@ -226,7 +226,7 @@ def populate_running_bots_list(amend_bot_message, refresh_live_bots, existing_bo
     " - " + active_bots_df["bot_strategy"] + \
     " - " + active_bots_df["bot_freq"] + \
     " - " +  active_bots_df["bot_stop_loss_type"] + " stop loss of " +\
-    (active_bots_df["bot_stop_loss_pctg"]*100).astype(str) + "%" +\
+    (active_bots_df["bot_stop_loss_pctg"]*100).map('{:.2f}%'.format) +\
     active_bots_df['bot_strategy_parameters'].apply(lambda x: ' '.join([f" - {key}={x[key]}" for key in x.keys() if x[key]!=-999])) # show params
 
     active_bots_df["bot_last_status"] = "Update: " + active_bots_df["last_update"].astype(str) + \
@@ -360,20 +360,22 @@ def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
                 " - " + static_df["bot_pair"] + \
                 " - " + static_df["bot_strategy"]
 
-            launch_dt_txt = f"Launch Date: {static_df['bot_start_date'].values[0]}"
+            launch_dt = static_df.iloc[0]['bot_start_date']
+            launch_dt_message = f"Launch Date: {launch_dt.strftime('%m/%d/%Y at %H:%M:%S %Z')}"
 
             bars_df = db_update.select_bot_distinct_bars(plot_bot_unique_id, pg_db_configuration)
             orders_df = db_update.select_all_bot_orders(plot_bot_unique_id, ('filled', 'pending', ), pg_db_configuration)
             print(bars_df.head(2))
             figure = bot_plots.live_bot_strategy(bars_df, orders_df, ['bar_param_1', 'bar_param_2'])
             
-            last_update_text = f"Last Updated: {bars_df.iloc[-1]['bar_record_timestamp']}"
+            last_update_time = bars_df.iloc[-1]['bar_record_timestamp']
+            last_update_message = f"Last Updated: {last_update_time.strftime('%m/%d/%Y at %H:%M:%S %Z')}"
             # TODO finish plotting - get params dynamically
         # else:
         #     figure = {}
         #     print('do nothing')
 
-        return modal_is_open, modal_title, figure, launch_dt_txt, last_update_text
+        return modal_is_open, modal_title, figure, launch_dt_message, last_update_message
 
     else:
         return no_update, no_update, no_update, no_update, no_update
