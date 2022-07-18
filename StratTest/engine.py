@@ -1,15 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
 
 import numpy as np
 import pandas as pd
+import pytz
 
 import plotly_express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from chart_viz_config import app_timezone
 
 class TradingStrategy():
 
@@ -232,7 +234,8 @@ class TradingStrategy():
 
     def _add_stop_loss(self):
         # works well for long only
-        self.df['temp_trade_grouper_filled_nans'] = self.df['trade_grouper'].fillna(datetime(2030,1,1))
+        fillna_days_offset = pd.Timestamp(datetime.now(pytz.utc)+timedelta(days=5000)).tz_convert(app_timezone)
+        self.df['temp_trade_grouper_filled_nans'] = self.df['trade_grouper'].fillna(fillna_days_offset)
 
         if self.stop_loss_type == 'trailing':
             self.df['sl_price'] = self.df.groupby('temp_trade_grouper_filled_nans')['high'].transform(pd.Series.cummax)  * (1-(self.stop_loss_bps/10000)) * self.df[f'{self.strategy}_signal']

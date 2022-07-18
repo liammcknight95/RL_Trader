@@ -19,7 +19,7 @@ from torch import preserve_format
 
 # my modules
 from configuration import config
-from chart_viz_config import strategies
+from chart_viz_config import strategies, app_timezone
 from chart_viz_charting_layout import charting_page_layout
 import chart_viz_charting
 from chart_viz_downloading_layout import downloading_page_layout
@@ -306,7 +306,7 @@ def make_graph(store_ref, strategy, frequency, transaction_cost, stop_loss, para
     data = get_minute_by_minute_cache(session_id, pair, start_date, end_date)
     if data.shape[0]>0:
         # print(data)
-        data['Datetime'] = pd.to_datetime(data['Datetime'])
+        data['Datetime'] = pd.to_datetime(data['Datetime']).dt.tz_localize('UTC').dt.tz_convert(app_timezone) 
         data = data.set_index('Datetime')
         # print(data.iloc[1])
         # convert frequency from timedelta to seconds
