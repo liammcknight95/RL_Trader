@@ -97,7 +97,7 @@ class TradingBot():
                 
                 self.fetch_bars() # get bars
                 initial_bars_df = self._get_crossover().reset_index() # generate signal - updates self.bars_df
-
+                    
                 current_period = initial_bars_df.index[-1]
                 if initial_bars_df.loc[current_period][f'{self.strategy}_signal']==1:
 
@@ -116,6 +116,11 @@ class TradingBot():
                 else: self.logger.info(f"No Opening order placed, resuming normal bot activity")
 
             self.sell_order = None # placeholder for an initial empty sell order
+
+            # append initial fetch to db - important on "current opening" bots to see what has happened prior to inception
+            for index, row in self.bars_df.reset_index().iterrows():
+                self._db_new_bar(row)
+            self.logger.info(f"Appended {self.bars_df.shape[0]} new bars")
 
             self.logger.info(f"Bot instanciated at {datetime.now().isoformat()}")
 
@@ -378,8 +383,8 @@ class TradingBot():
                 self.bars_df = self.bars_df.iloc[bars_to_drop: , :] # drop top dataframe rows 1 in excess of limit_bars_fetch
                 self.logger.info(f"Dropped {bars_to_drop} rows")
 
-        self.logger.info(f"Current bars df shape: {self.bars_df.shape}. Tail:")
-        self.logger.info(self.bars_df.tail(15).to_string())
+        # self.logger.info(f"Current bars df shape: {self.bars_df.shape}. Tail:\n {self.bars_df.tail(15).to_string()}")
+        # self.logger.info(self.bars_df.tail(15).to_string())
 
 
     def _get_crossover(self, plot=False):
@@ -474,7 +479,8 @@ class TradingBot():
             self.logger.error(f'### Order NOT place correctly due to the following exception: {type(e).__name__} - {e}')
         
         # set initial stop loss NOTE might need to be adjusted with trailing/dynamic logic
-        self.sl_price = self.buy_order['price'] * (1 - self.sl_pctg)
+        # self.sl_price = self.buy_order['price'] * (1 - self.sl_pctg)
+        self.sl_price = self.bars_df.iloc[-1]['sl_price'] # already calculated from engine
 
 
     def orders_error_handling(self, e):
@@ -539,7 +545,7 @@ class TradingBot():
                 if self.bars_df.loc[previous_period][f'{self.strategy}_new_position']==1 and self.bars_df.loc[previous_period]['timestamp']>self.signal_time:
                     # if signal is 1 and has been generated on a new bar - new timestamp, allows for signal confirmation
 
-                    self.create_new_order()                    
+                    self.create_new_order() # initial stop loss set in here                  
                     # print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                     self.in_position = True
                     self.signal_time = self.bars_df.loc[previous_period]['timestamp']
@@ -645,6 +651,7 @@ class TradingBot():
             # update bars record on database
             self._db_new_bar(self.bars_df.iloc[-1]) # here in order to also add info about the indicator and stop losses
 
+            self.logger.info(f"Current bars df shape: {self.bars_df.shape}. Tail:\n {self.bars_df.tail(10).to_string()}")
             self.logger.info('#####')
 
             self._db_new_health_status('UP', '') # adding new bot status
