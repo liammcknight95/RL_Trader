@@ -95,7 +95,7 @@ app.layout = dbc.Container([
     dcc.Location(id='url', refresh=False),
     html.Div(id='page-content'),
     html.Div(session_id, id='session-id', style={'display': 'none'}),
-], className="h-100", fluid=True, style={'padding':'0px'})
+], className='vh-100', fluid=True, style={'padding':'0px'})
 
 @logged
 @callback(Output('page-content', 'children'),

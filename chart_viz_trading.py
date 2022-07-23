@@ -9,6 +9,7 @@ from chart_viz_trading_layout import new_bot_info, new_order_info, new_balance_f
 from chart_viz_strategy_inputs_layout import dynamic_strategy_controls
 from StratTest import db_update_tables as db_update
 from StratTest import bot_plots
+from StratTest import bot_balances
 import json
 import config
 import ccxt
@@ -303,34 +304,33 @@ def populate_recent_bot_orders(refresh_live_bots, existing_orders_list, pg_db_co
         return running_orders_ui_children, existing_orders_list  
 
 @callback(
+    Output("trading-current-subacc-name", "children"),
     Output("trading-non-zero-balances-free-list", "children"),
     Output("trading-non-zero-balances-used-list", "children"),
     Output("trading-non-zero-balances-total-list", "children"),
+    Output("trading-total-balances-pie-chart", "figure"),
     Input("trading-live-bots-list", "children"),
     Input("trading-ccxt-exchanges", "value"),
     prevent_initial_call=True
 )
 def populate_non_zero_balances(bots_list, exchange_subaccount):
-    if exchange_subaccount is not None:
-        print('in update balance block')
-        # fetch balances - TODO better way than creating exchange obj every time
-        exchange = ccxt.bitstamp(
-            {
-                'apiKey': config.exchange_keys[exchange_subaccount]['KEY'],
-                'secret': config.exchange_keys[exchange_subaccount]['SECRET']
-            }
-        )
+    print('fetched_balances')
+    positive_balances_df = bot_balances.get_all_subacc_balances(target_ccy='GBP')
+    
 
-        balances = exchange.fetch_balance()
+    current_subacc_df = positive_balances_df[positive_balances_df['account']==exchange_subaccount].copy()
 
-        # non zero balances
-        balances_free = [new_balance_fetched(ccy, balances['free'][ccy], 'free') for ccy in balances['free'].keys() if balances['free'][ccy]!=0]
-        balances_used = [new_balance_fetched(ccy, balances['used'][ccy], 'used') for ccy in balances['used'].keys() if balances['used'][ccy]!=0]
-        balances_total = [new_balance_fetched(ccy, balances['total'][ccy], 'total') for ccy in balances['total'].keys() if balances['total'][ccy]!=0]
+    balances_free = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['free'], 'free') for ccy in current_subacc_df.index]
+    balances_used = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['used'], 'used') for ccy in current_subacc_df.index]
+    balances_total = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['total'], 'total') for ccy in current_subacc_df.index]
 
-        return balances_free, balances_used, balances_total
-    else:
-        return [], [], []
+    # charting total balances
+    positive_balances_df = positive_balances_df.reset_index().rename(columns={'index':'ccy'})
+    positive_balances_df['recap'] = positive_balances_df['total_GBP'].sum().round(2).astype(str)
+    balances_sunb_chart = bot_balances.plot_all_balances_sunb(positive_balances_df, target_ccy='GBP')
+
+    return exchange_subaccount, balances_free, balances_used, balances_total, balances_sunb_chart
+
 
 
 # populate strategy data plotting

@@ -430,7 +430,7 @@ new_bot_ui = dbc.Card(
 
     ],
     body=True,
-    className='h-100'
+    className='vh-100'
 )
 
 ### BALANCES
@@ -454,6 +454,8 @@ current_balances_ui = dbc.Card(
                 style={"text-align":'center'}
             )
         ),
+        html.Br(),
+        dbc.Label('', id="trading-current-subacc-name"),
         html.Br(),
         dbc.Label('Free'),
         dbc.Row(
@@ -479,10 +481,27 @@ current_balances_ui = dbc.Card(
                 html.P("List all the non zero total balances")
             ],
             id="trading-non-zero-balances-total-list"
-        )
+        ),
+        html.Br(),
+        dbc.Label('Totals'),
+        dcc.Graph(
+            id="trading-total-balances-pie-chart",
+            figure={
+                'layout': go.Layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(gridcolor='#444'),
+                yaxis=dict(gridcolor='#444'),
+                # height=650
+                )
+            },
+            # style={'height':'100%'},
+            # className='h-100'
+            
+        ),
     ],
     body=True,
-    className='h-100'
+    className='vh-100'
 )
 
 

@@ -43,6 +43,10 @@
     /*width: 80%;*/
 }
 
+.DateInput_input, .DateInput_input_1 {
+    Height: 30px;
+}
+
 .DateRangePickerInput__withBorder {
     border:black;
 }
