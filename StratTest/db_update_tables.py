@@ -181,7 +181,8 @@ def select_all_bot_orders(bot_id, order_statuses, config_parameters):
         order_direction,
         order_price_placed,
         order_ob_ask_price,
-        order_ob_bid_price
+        order_ob_bid_price,
+        order_fee
     FROM 
         bot_orders_tbl
     WHERE 

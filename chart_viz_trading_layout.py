@@ -1,5 +1,5 @@
 import dash_bootstrap_components as dbc
-from dash import dcc, html
+from dash import dcc, html, dash_table
 import plotly.graph_objects as go
 from chart_viz_config import ccxt_exchanges, strategies, frequencies
 
@@ -135,6 +135,28 @@ running_bots_ui = dbc.Card(
                                     )
                                 ]
                             ),
+
+                            dbc.Row(
+                                dbc.Label(
+                                    'Orders', 
+                                    style={"text-align":'left'}
+                                )
+                            ),
+                            dbc.Row(
+                                [
+                                    dash_table.DataTable(
+                                        id="trading-live-bots-orders-table",
+                                    style_header={
+                                        'backgroundColor': 'rgb(30, 30, 30)',
+                                        'color': 'white'
+                                    },
+                                    style_data={
+                                        'backgroundColor': 'rgb(50, 50, 50)',
+                                        'color': 'white'
+                                    },
+                                    )
+                                ]
+                            )
 
                         ],
                         # style={ 'minHeight':'75vh', 'height':'75vh', 'maxHeight':'75vh'},#, 'height':'70%'
@@ -483,7 +505,12 @@ current_balances_ui = dbc.Card(
             id="trading-non-zero-balances-total-list"
         ),
         html.Br(),
-        dbc.Label('Totals'),
+        dbc.Row(
+            dbc.Label(
+                'All Accounts Recap',
+                style={"text-align":"center"}
+            ),
+        ),
         dcc.Graph(
             id="trading-total-balances-pie-chart",
             figure={

@@ -18,6 +18,7 @@ import random
 import docker
 from docker.types import Mount
 import time
+import numpy as np
 
 # os.environ["DOCKER_HOST"] = f"ssh://root@{configssh_server_ip_address}" 
 # pg_db_configuration = config.pg_db_configuration(location='local')
@@ -320,9 +321,9 @@ def populate_non_zero_balances(bots_list, exchange_subaccount):
 
     current_subacc_df = positive_balances_df[positive_balances_df['account']==exchange_subaccount].copy()
 
-    balances_free = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['free'], 'free') for ccy in current_subacc_df.index]
-    balances_used = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['used'], 'used') for ccy in current_subacc_df.index]
-    balances_total = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['total'], 'total') for ccy in current_subacc_df.index]
+    balances_free = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['free'], 'free') for ccy in current_subacc_df.index if current_subacc_df.loc[ccy]['free']>0]
+    balances_used = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['used'], 'used') for ccy in current_subacc_df.index if current_subacc_df.loc[ccy]['used']>0]
+    balances_total = [new_balance_fetched(ccy, current_subacc_df.loc[ccy]['total'], 'total') for ccy in current_subacc_df.index if current_subacc_df.loc[ccy]['total']>0]
 
     # charting total balances
     positive_balances_df = positive_balances_df.reset_index().rename(columns={'index':'ccy'})
@@ -332,6 +333,30 @@ def populate_non_zero_balances(bots_list, exchange_subaccount):
     return exchange_subaccount, balances_free, balances_used, balances_total, balances_sunb_chart
 
 
+### SINGLE BOT STRATEGY VISUALIZATION
+def get_bot_performance_df(df_orders):
+    ### NOTE works for long only, for short trades buy and sell would need to be inverted
+
+    # create index to pivot per trade
+    df_orders['trade_grouper'] = np.floor(df_orders.index / 2)
+
+    # pivot to have buy and sell for the same trade on the same row
+    perf_df = df_orders.pivot(index='trade_grouper', columns='order_direction', values=['order_quantity_filled', 'order_price_filled', 'order_fee'])
+    assert (perf_df['order_quantity_filled']['buy'] == perf_df['order_quantity_filled']['sell']).sum() == perf_df.shape[0], 'buy and sell trade do not all match quantity filled'
+    
+    perf_df['return'] = (perf_df['order_price_filled']['sell'] - perf_df['order_price_filled']['buy']) / perf_df['order_price_filled']['buy']
+    perf_df['notional_entry'] = perf_df['order_quantity_filled']['buy'] * perf_df['order_price_filled']['buy']
+    perf_df['notional_exit'] = perf_df['order_quantity_filled']['sell'] * perf_df['order_price_filled']['sell']
+
+    # gross notional results
+    perf_df['base_ccy_trade_gross'] = perf_df['notional_exit'] - perf_df['notional_entry']
+    perf_df['base_ccy_cum_gross'] = perf_df['base_ccy_trade_gross'].cumsum()
+
+    # net notional results
+    perf_df['base_ccy_trade_net'] = perf_df['base_ccy_trade_gross'] - (perf_df['order_fee']['buy']+perf_df['order_fee']['sell'])
+    perf_df['base_ccy_cum_net'] = perf_df['base_ccy_trade_net'].cumsum()
+    return perf_df
+
 
 # populate strategy data plotting
 @callback(
@@ -340,6 +365,8 @@ def populate_non_zero_balances(bots_list, exchange_subaccount):
     Output("trading-live-bots-px-chart", "figure"),
     Output("trading-live-bots-chart-launch-dt", "children"),
     Output("trading-live-bots-chart-last-updt-dt", "children"),
+    Output("trading-live-bots-orders-table", "data"),
+    Output("trading-live-bots-orders-table", "columns"),
     Input({"type": "trading-bot-btn-plot", "index": ALL}, "n_clicks"),
     State("trading-live-bots-modal", "is_open"),
     State("trading-db-settings-store", "data"),
@@ -370,15 +397,24 @@ def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
             
             last_update_time = bars_df.iloc[-1]['bar_record_timestamp']
             last_update_message = f"Last Updated: {last_update_time.strftime('%m/%d/%Y at %H:%M:%S %Z')}"
+            
+            # get order table and performance
+            # performance_df = get_bot_performance_df(orders_df)
+
+            orders_df['placed_at'] = orders_df['order_timestamp_placed'].dt.strftime('%Y-%m-%d %H:%M:%S %z')
+            order_tbl_subset = ['placed_at', 'order_exchange_trade_id', 'order_status', 'order_price_filled', 'order_quantity_filled', 'order_fee']
+            orders_tbl_data = orders_df[order_tbl_subset].to_dict('records')
+            orders_tbl_columns = [{"name": i.replace("order_", ""), "id": i} for i in order_tbl_subset]
+            
             # TODO finish plotting - get params dynamically
         # else:
         #     figure = {}
         #     print('do nothing')
 
-        return modal_is_open, modal_title, figure, launch_dt_message, last_update_message
+        return modal_is_open, modal_title, figure, launch_dt_message, last_update_message, orders_tbl_data, orders_tbl_columns
 
     else:
-        return no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
 
 # handle display of symbols - manual filter - given a selected exchange

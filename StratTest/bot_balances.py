@@ -3,6 +3,7 @@ import config
 import ccxt
 import plotly_express as px
 
+
 def get_exchange_object(account):
     ''' Create and return an exchange object for a given subaccount '''
 
@@ -87,16 +88,15 @@ def plot_all_balances_sunb(positive_balances_df, target_ccy='GBP'):
     balances_fig = px.sunburst(
         positive_balances_df,
         path=["recap", "ccy", "account"],
-        # title="All balances",
         color="ccy",
         values=f"total_{target_ccy}",
         color_discrete_map={'(?)':'rgba(255, 0, 0, 0.0);'}, # fully transparent color
-        # color_discrete_sequence=[medimumvioletred, seagreen],
-        # height=800,
     )
 
     balances_fig.update_layout(
-        margin = dict(t=0, l=0, r=0, b=0),
+        margin = dict(t=5, l=5, r=5, b=5),
+        # title=f'<b>All Accounts Recap</b>',
+        # title_x=.5,
         template="plotly_dark",
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
