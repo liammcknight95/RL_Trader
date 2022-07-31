@@ -30,6 +30,11 @@
 .Select-control .Select-value .Select-value-label{
     color:white !important;
 }
+.has-value.Select--single > 
+.Select-control, .has-value.is-pseudo-focused.Select--single > 
+.Select-control{
+    border:black !important;
+}
 
 /*  Custom date range picker with dark theme */
 .DateRangePickerInput {
