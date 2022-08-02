@@ -334,36 +334,14 @@ def populate_non_zero_balances(bots_list, exchange_subaccount):
 
 
 ### SINGLE BOT STRATEGY VISUALIZATION
-def get_bot_performance_df(df_orders):
-    ### NOTE works for long only, for short trades buy and sell would need to be inverted
-
-    # create index to pivot per trade
-    df_orders['trade_grouper'] = np.floor(df_orders.index / 2)
-
-    # pivot to have buy and sell for the same trade on the same row
-    perf_df = df_orders.pivot(index='trade_grouper', columns='order_direction', values=['order_quantity_filled', 'order_price_filled', 'order_fee'])
-    assert (perf_df['order_quantity_filled']['buy'] == perf_df['order_quantity_filled']['sell']).sum() == perf_df.shape[0], 'buy and sell trade do not all match quantity filled'
-    
-    perf_df['return'] = (perf_df['order_price_filled']['sell'] - perf_df['order_price_filled']['buy']) / perf_df['order_price_filled']['buy']
-    perf_df['notional_entry'] = perf_df['order_quantity_filled']['buy'] * perf_df['order_price_filled']['buy']
-    perf_df['notional_exit'] = perf_df['order_quantity_filled']['sell'] * perf_df['order_price_filled']['sell']
-
-    # gross notional results
-    perf_df['base_ccy_trade_gross'] = perf_df['notional_exit'] - perf_df['notional_entry']
-    perf_df['base_ccy_cum_gross'] = perf_df['base_ccy_trade_gross'].cumsum()
-
-    # net notional results
-    perf_df['base_ccy_trade_net'] = perf_df['base_ccy_trade_gross'] - (perf_df['order_fee']['buy']+perf_df['order_fee']['sell'])
-    perf_df['base_ccy_cum_net'] = perf_df['base_ccy_trade_net'].cumsum()
-    return perf_df
-
 
 # populate strategy data plotting
 @callback(
     Output("trading-live-bots-modal", "is_open"),
     Output("trading-live-bots-modal-title", "children"),
+    Output("trading-live-bots-performance-recap", "children"),
     Output("trading-live-bots-px-chart", "figure"),
-    Output("trading-live-bots-chart-launch-dt", "children"),
+    # Output("trading-live-bots-chart-launch-dt", "children"),
     Output("trading-live-bots-chart-last-updt-dt", "children"),
     Output("trading-live-bots-orders-table", "data"),
     Output("trading-live-bots-orders-table", "columns"),
@@ -383,12 +361,15 @@ def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
         if modal_is_open:
             plot_bot_unique_id = ctx_id.split('","type":')[0].split('{"index":"')[-1]
             static_df = db_update.select_single_bot(pg_db_configuration, bot_id=plot_bot_unique_id)
+    
+            launch_dt = static_df.iloc[0]['bot_start_date']
+            launch_dt_message = f"launched on {launch_dt.strftime('%m/%d/%Y at %H:%M:%S %Z')}"
+
             modal_title = static_df["bot_container_name"].astype(str) + \
                 " - " + static_df["bot_pair"] + \
-                " - " + static_df["bot_strategy"]
+                " - " + static_df["bot_strategy"] + \
+                " (" + launch_dt_message + ")"
 
-            launch_dt = static_df.iloc[0]['bot_start_date']
-            launch_dt_message = f"Launch Date: {launch_dt.strftime('%m/%d/%Y at %H:%M:%S %Z')}"
 
             bars_df = db_update.select_bot_distinct_bars(plot_bot_unique_id, pg_db_configuration)
             orders_df = db_update.select_all_bot_orders(plot_bot_unique_id, ('filled', 'pending', ), pg_db_configuration)
@@ -397,21 +378,41 @@ def plot_strategy_data(show_data_btn, modal_is_open, pg_db_configuration):
             
             last_update_time = bars_df.iloc[-1]['bar_record_timestamp']
             last_update_message = f"Last Updated: {last_update_time.strftime('%m/%d/%Y at %H:%M:%S %Z')}"
-            
-            # get order table and performance
-            # performance_df = get_bot_performance_df(orders_df)
 
-            orders_df['placed_at'] = orders_df['order_timestamp_placed'].dt.strftime('%Y-%m-%d %H:%M:%S %z')
-            order_tbl_subset = ['placed_at', 'order_exchange_trade_id', 'order_status', 'order_price_filled', 'order_quantity_filled', 'order_fee']
-            orders_tbl_data = orders_df[order_tbl_subset].to_dict('records')
-            orders_tbl_columns = [{"name": i.replace("order_", ""), "id": i} for i in order_tbl_subset]
+            if orders_df.shape[0]>0:
+                orders_df['placed_at'] = orders_df['order_timestamp_placed'].dt.strftime('%Y-%m-%d %H:%M:%S %z')
+                order_tbl_subset = ['placed_at', 'order_exchange_trade_id', 'order_status', 'order_price_filled', 'order_quantity_filled', 'order_fee']
+                orders_tbl_data = orders_df[order_tbl_subset].to_dict('records')
+                orders_tbl_columns = [{"name": i.replace("order_", ""), "id": i} for i in order_tbl_subset]
+              
             
+                if orders_df.shape[0]>=2:
+                    # get order table and performance
+                    performance_df = bot_balances.get_bot_performance_df(orders_df)
+                    initial_position = static_df['bot_owned_ccy_start_position'].values[0]
+                    position_ccy = static_df['bot_pair'].values[0].split("/")[1]
+                    current_notional = (initial_position + performance_df['base_ccy_cum_net'].iloc[-1])
+                    gross_notional = (initial_position + performance_df['base_ccy_cum_gross'].iloc[-1])
+
+                    net_perf = (current_notional / initial_position) - 1
+                    gross_perf = (gross_notional / initial_position) - 1
+
+                    perf_recap = f"Net Performance: {net_perf*100:.2f}% (Gross: {gross_perf*100:.2f}%) - Notional: {current_notional:.2f} {position_ccy}"
+                    
+                else: # there is 1 order, but has not been closed yet
+                    perf_recap = 'No orders closed yet'
+            
+            else: # placeholder table
+                orders_tbl_data = [{}]
+                orders_tbl_columns = [{"name": i.replace("order_", ""), "id": i} for i in ['']]
+                perf_recap = 'No orders executed yet'
+
             # TODO finish plotting - get params dynamically
         # else:
         #     figure = {}
         #     print('do nothing')
 
-        return modal_is_open, modal_title, figure, launch_dt_message, last_update_message, orders_tbl_data, orders_tbl_columns
+        return modal_is_open, modal_title, perf_recap, figure, last_update_message, orders_tbl_data, orders_tbl_columns
 
     else:
         return no_update, no_update, no_update, no_update, no_update, no_update, no_update

@@ -12,6 +12,7 @@ import signal, sys, os
 import pytz
 import math
 from chart_viz_config import app_timezone
+from bot_balances import get_bot_performance_df
 
 # TODO check if data from api need to be assigned a time frequency - to align with resample data in 
 # engine and make sure there's no gaps
@@ -425,8 +426,20 @@ class TradingBot():
         self.top_mid_px = (self.top_ask_px + self.top_bid_px) / 2
         self.top_ob_spread = (self.top_ask_px - self.top_bid_px) / self.top_mid_px # TODO check for spread when placing order
 
+        # pull orders history
+        df_orders = db_update.select_all_bot_orders(
+            self.bot_id, 
+            ('filled', '', ), 
+            self.db_config_parameters
+        )
+        if df_orders.shape[0] > 0:
+            performance_df = get_bot_performance_df(df_orders)
+            # update owned ccy size
+            self.owned_ccy_size = self.owned_ccy_size + performance_df['base_ccy_cum_net'].iloc[-1]
+
         # current_mid_price : 1 BTC = my_size : x BTC
         self.trade_size = self.owned_ccy_size/self.top_mid_px
+
 
 
     def check_open_orders(self):
@@ -546,11 +559,10 @@ class TradingBot():
                     # if signal is 1 and has been generated on a new bar - new timestamp, allows for signal confirmation
 
                     self.create_new_order() # initial stop loss set in here                  
-                    # print(f'{datetime.now().isoformat()} - placed a new buy order: {self.buy_order}. Stop loss {self.sl_price}')
                     self.in_position = True
                     self.signal_time = self.bars_df.loc[previous_period]['timestamp']
                     self._db_new_order(self.buy_order) # adding new order to database
-                    self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
+                    self.logger.info(f"----- New BUY ORDER PLACED at {datetime.now().isoformat()}: {self.buy_order}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price}. Notional Equivalent {self.owned_ccy_size} -----")
                 else:
                     self.logger.info(f"No new orders. Current position: {self.in_position}")
                     self.logger.info(f"Current period: {current_period}, Previous period: {previous_period}, Current period ts: {self.bars_df.loc[current_period]['timestamp']}, Previous period ts: {self.bars_df.loc[previous_period]['timestamp']}, self.signal_time: {self.signal_time}")
@@ -558,29 +570,11 @@ class TradingBot():
         elif self.in_position:
 
             if self.order_executed_check(self.buy_order['id']):
-                # 
 
                 # if in position and order has been executed monitor price level and adjust stop loss level accordingly
                 # if one of the 2 conditions is hit, close the position with a market order
 
                 if self.current_price > self.previous_price and self.current_price > self.order_price:
-
-                    # if self.sl_type == 'trailing': 
-                    #     # with trailing stop loss, if live order, update stop loss price if trade currently in profit
-                    #     # since stop loss might update at different snaps of current bar, we need additional condition
-                    #     # to make that stop loss price never "worsens" TODO: check if this extra condition can be added in the first if block
-                    #     potential_new_sl_price = self.current_price * (1 - self.sl_pctg)
-
-                    # elif self.sl_type == 'dynamic':
-                    #     # stop loss calculated on a dynamic multiplier depending on recent market volatility
-                    #     # also designed that stop loss never "worsens" - conservative approach
-                    #     # *4 TODO analyze this parameter, daily makes sense?
-                    #     stop_loss_vol_adj_pctg = (self.sl_pctg) / (1+(self.bars_df['close'].pct_change().rolling(10, min_periods=1).std()*(260**0.5))*4)
-                    #     potential_new_sl_price = self.current_price * (1-(stop_loss_vol_adj_pctg.iloc[-1])) # current close price * last multiplier of the series above
-                
-                    # elif self.sl_type == 'static':
-                    #     # if static, sl price does not change
-                    #     potential_new_sl_price = self.sl_price
 
                     potential_new_sl_price = self.bars_df.iloc[-1]['sl_price']
                     # update sl price if potential_new_sl_price constitutes an improvement
@@ -603,8 +597,6 @@ class TradingBot():
                     )
 
                     self.logger.info(f"----- SELL ORDER PLACED at {datetime.now().isoformat()}: id: {self.sell_order['id']}. Order book: ask: {self.top_ask_px} - bid: {self.top_bid_px}. Stop loss level: {self.sl_price} -----")
-                    
-                    # print(f"{datetime.now().isoformat()} - placed a new sell order id: {self.sell_order['id']}.")
 
                     self._db_new_order(self.sell_order) # adding new order to database
 

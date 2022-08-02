@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import config
 import ccxt
 import plotly_express as px
@@ -104,3 +105,27 @@ def plot_all_balances_sunb(positive_balances_df, target_ccy='GBP'):
     )
 
     return balances_fig
+
+
+def get_bot_performance_df(df_orders):
+    ### NOTE works for long only, for short trades buy and sell would need to be inverted
+
+    # create index to pivot per trade
+    df_orders['trade_grouper'] = np.floor(df_orders.index / 2)
+
+    # pivot to have buy and sell for the same trade on the same row
+    perf_df = df_orders.pivot(index='trade_grouper', columns='order_direction', values=['order_quantity_filled', 'order_price_filled', 'order_fee'])
+    assert (perf_df['order_quantity_filled']['buy'] == perf_df['order_quantity_filled']['sell']).sum() == perf_df.shape[0], 'buy and sell trade do not all match quantity filled'
+    
+    perf_df['return'] = (perf_df['order_price_filled']['sell'] - perf_df['order_price_filled']['buy']) / perf_df['order_price_filled']['buy']
+    perf_df['notional_entry'] = perf_df['order_quantity_filled']['buy'] * perf_df['order_price_filled']['buy']
+    perf_df['notional_exit'] = perf_df['order_quantity_filled']['sell'] * perf_df['order_price_filled']['sell']
+
+    # gross notional results
+    perf_df['base_ccy_trade_gross'] = perf_df['notional_exit'] - perf_df['notional_entry']
+    perf_df['base_ccy_cum_gross'] = perf_df['base_ccy_trade_gross'].cumsum()
+
+    # net notional results
+    perf_df['base_ccy_trade_net'] = perf_df['base_ccy_trade_gross'] - (perf_df['order_fee']['buy']+perf_df['order_fee']['sell'])
+    perf_df['base_ccy_cum_net'] = perf_df['base_ccy_trade_net'].cumsum()
+    return perf_df

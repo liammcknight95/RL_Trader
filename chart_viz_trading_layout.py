@@ -82,15 +82,32 @@ running_bots_ui = dbc.Card(
         dbc.Modal(
             [
                 dbc.ModalHeader(
+
                     dbc.ModalTitle(
                         "Header",
                         id="trading-live-bots-modal-title"
-                    )
+                    ),
+
                 ),
 
                 dbc.ModalBody(
                     dbc.Card(
                         [
+
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                            html.P("Performance: ", id="trading-live-bots-performance-recap"),
+                                            style={"font-weight":"bold"}
+                                        ),
+                
+                                    # dbc.Col(
+                                    #     html.P("Last Updated: ", id="trading-live-bots-chart-last-updt-dt"),
+                                    #     style={"text-align":"right"}
+                                    # ),
+                                ]
+                            ),
+
                             dcc.Graph(
                                 id="trading-live-bots-px-chart",
                                 figure={
@@ -108,18 +125,6 @@ running_bots_ui = dbc.Card(
                             ),
 
                             dbc.Row(
-                                dbc.Col(
-                                        html.P("Launch Date: ", id="trading-live-bots-chart-launch-dt")
-                                    )
-                            ),
-
-                            dbc.Row(
-                                dbc.Col(
-                                        html.P("Last Updated: ", id="trading-live-bots-chart-last-updt-dt")
-                                    )
-                            ),
-
-                            dbc.Row(
                                 [
                                     dbc.Col(
                                         html.P("Displayed Range: "),
@@ -132,14 +137,27 @@ running_bots_ui = dbc.Card(
                                             # min_date_allowed=date(2021, 1, 1),
                                             persistence=False
                                         ),
-                                    )
-                                ]
+                                    ),
+                    
+                                    dbc.Col(
+                                        html.P("Last Updated: ", id="trading-live-bots-chart-last-updt-dt"),
+                                        style={"text-align":"right"}
+                                    ),
+                                ],
+                                justify="end",
                             ),
+
+
+                                #     ],
+                                # justify="end",
+                            # ),
+
+                            html.Br(),
 
                             dbc.Row(
                                 dbc.Label(
                                     'Orders', 
-                                    style={"text-align":'left'}
+                                    style={"text-align":"center"}
                                 )
                             ),
                             dbc.Row(

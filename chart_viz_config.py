@@ -3,11 +3,12 @@ import os
 
 # list to be updated/maintained every time a sub account is needed
 # naming convention: EXCHANGENAME_SUBACCOUNTNAME
-ccxt_exchanges = ['BITSTAMP_MAIN', 'BITSTAMP_BTCEMA']
+ccxt_exchanges = ['BITSTAMP_MAIN', 'BITSTAMP_BTCEMA', 'BITSTAMP_TESTING']
 
 currencies = [
     'BTC_ADA',
     'BTC_AVE',
+    'BTC_ETH',
     'USDT_AAVE',
     'USDT_ADA',
     'USDT_APE',

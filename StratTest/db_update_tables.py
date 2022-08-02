@@ -189,6 +189,8 @@ def select_all_bot_orders(bot_id, order_statuses, config_parameters):
         order_bot_id = '{bot_id}' AND
         order_status IN {order_statuses}
         --(order_status = 'dormant' OR order_status = 'partialled')
+    ORDER BY 
+        order_timestamp_placed DESC
     """
 
     conn = psycopg2.connect(**config_parameters)
