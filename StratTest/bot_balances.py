@@ -38,8 +38,17 @@ def get_balances_conversion_rates(positive_balances_df, target_ccy='GBP', accoun
             except Exception as e:
                 # if symbol not found, try the reverse?
                 # TODO handle logic when currency is expressed as flipped/reversed
+                # test/cleanup
                 if type(e).__name__ == 'BadSymbol':
-                    print(f'{target_ccy} not found')
+                    try:
+                        response = exchange.fetchTicker(f'{target_ccy}/{balance_ccy}')
+                        conversion_rates_dict[balance_ccy] = 1/response['last']
+                    except Exception as e:
+                        if type(e).__name__ == 'BadSymbol':
+                            print(f'{balance_ccy}/{target_ccy} not found')
+                else:
+                    print(type(e), e)
+                    pass
 
         else:
             conversion_rates_dict[balance_ccy] = 1
@@ -110,22 +119,27 @@ def plot_all_balances_sunb(positive_balances_df, target_ccy='GBP'):
 def get_bot_performance_df(df_orders):
     ### NOTE works for long only, for short trades buy and sell would need to be inverted
 
-    # create index to pivot per trade
-    df_orders['trade_grouper'] = np.floor(df_orders.index / 2)
+    if df_orders.shape[0]>=2:
+        if df_orders.shape[0] % 2 == 1: # if number of orders is odd, not all buys match a sell, need to drop last order
+            df_orders = df_orders.iloc[:-1 , :]
+        # create index to pivot per trade
+        df_orders['trade_grouper'] = np.floor(df_orders.index / 2)
 
-    # pivot to have buy and sell for the same trade on the same row
-    perf_df = df_orders.pivot(index='trade_grouper', columns='order_direction', values=['order_quantity_filled', 'order_price_filled', 'order_fee'])
-    assert (perf_df['order_quantity_filled']['buy'] == perf_df['order_quantity_filled']['sell']).sum() == perf_df.shape[0], 'buy and sell trade do not all match quantity filled'
+        # pivot to have buy and sell for the same trade on the same row
+        perf_df = df_orders.pivot(index='trade_grouper', columns='order_direction', values=['order_quantity_filled', 'order_price_filled', 'order_fee'])
+        print('####here', perf_df['order_quantity_filled']['buy'], perf_df['order_quantity_filled']['sell'].sum(), perf_df.shape[0])
+        assert (perf_df['order_quantity_filled']['buy'] == perf_df['order_quantity_filled']['sell']).sum() == perf_df.shape[0], 'buy and sell trade do not all match quantity filled'
+        
+        perf_df['return'] = (perf_df['order_price_filled']['sell'] - perf_df['order_price_filled']['buy']) / perf_df['order_price_filled']['buy']
+        perf_df['notional_entry'] = perf_df['order_quantity_filled']['buy'] * perf_df['order_price_filled']['buy']
+        perf_df['notional_exit'] = perf_df['order_quantity_filled']['sell'] * perf_df['order_price_filled']['sell']
+
+        # gross notional results
+        perf_df['base_ccy_trade_gross'] = perf_df['notional_exit'] - perf_df['notional_entry']
+        perf_df['base_ccy_cum_gross'] = perf_df['base_ccy_trade_gross'].cumsum()
+
+        # net notional results
+        perf_df['base_ccy_trade_net'] = perf_df['base_ccy_trade_gross'] - (perf_df['order_fee']['buy']+perf_df['order_fee']['sell'])
+        perf_df['base_ccy_cum_net'] = perf_df['base_ccy_trade_net'].cumsum()
+        return perf_df
     
-    perf_df['return'] = (perf_df['order_price_filled']['sell'] - perf_df['order_price_filled']['buy']) / perf_df['order_price_filled']['buy']
-    perf_df['notional_entry'] = perf_df['order_quantity_filled']['buy'] * perf_df['order_price_filled']['buy']
-    perf_df['notional_exit'] = perf_df['order_quantity_filled']['sell'] * perf_df['order_price_filled']['sell']
-
-    # gross notional results
-    perf_df['base_ccy_trade_gross'] = perf_df['notional_exit'] - perf_df['notional_entry']
-    perf_df['base_ccy_cum_gross'] = perf_df['base_ccy_trade_gross'].cumsum()
-
-    # net notional results
-    perf_df['base_ccy_trade_net'] = perf_df['base_ccy_trade_gross'] - (perf_df['order_fee']['buy']+perf_df['order_fee']['sell'])
-    perf_df['base_ccy_cum_net'] = perf_df['base_ccy_trade_net'].cumsum()
-    return perf_df
