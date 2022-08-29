@@ -190,7 +190,7 @@ def select_all_bot_orders(bot_id, order_statuses, config_parameters):
         order_status IN {order_statuses}
         --(order_status = 'dormant' OR order_status = 'partialled')
     ORDER BY 
-        order_timestamp_placed DESC
+        order_timestamp_placed ASC
     """
 
     conn = psycopg2.connect(**config_parameters)
@@ -374,6 +374,37 @@ def select_bot_distinct_bars(bot_id, config_parameters):
     conn = psycopg2.connect(**config_parameters)
     data = pd.read_sql(sql, conn)
     return data
+
+
+# QUERY EXAMPLES
+# -- select * from bot_bots_tbl
+#     SELECT --DISTINCT ON (bar_time, bar_action) 
+#         bar_time, 
+#         bar_record_timestamp,
+#         bar_open,
+#         bar_high,
+#         bar_low,
+#         bar_close,
+#         bar_stop_loss_price,
+#         bar_action,
+#         bar_in_position,
+#         bar_strategy_signal,
+#         bar_param_1,
+#         bar_param_2,
+#         bar_param_3,
+#         bar_param_4
+#     FROM 
+#         bot_order_book_bars_tbl -- bar_time, bar_stop_loss_price
+#     WHERE 
+#         bar_bot_id = 'bot-cf3f5ab6-2724-48ce-9f2f-b38c0887c405' 
+# 		and bar_record_timestamp between '2022-08-06 22:00:00' and '2022-08-09 11:00:00'
+#     ORDER BY 
+#         --bar_time ASC, 
+# --         bar_action ASC,
+#         bar_record_timestamp ASC
+
+# select * from bot_orders_tbl where 
+# order_bot_id = 'bot-cf3f5ab6-2724-48ce-9f2f-b38c0887c405' 
 
 # TODO update existing order:
 # update if partially or totally filled - amount

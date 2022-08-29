@@ -40,6 +40,7 @@ currencies_mapping = {
     'BITSTAMP': {
         'GBP_BTC':'BTC/GBP',
         'GBP_ETH':'ETH/GBP',
+        'BTC_ETH':'ETH/BTC',
         'USDT_BTC':'BTC/USDT', 
         'BTC_AAVE':'AAVE/BTC', 
         'USDT_SUSHI':'SUSHI/USD', # * not same
