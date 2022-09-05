@@ -112,4 +112,4 @@ def qq_plot(series):
         'height': 700,
     })
 
-    fig.show()
+    return fig
