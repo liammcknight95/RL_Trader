@@ -44,10 +44,9 @@ class Preprocessing:
 
     # method that unravels the nested json structure into a more manageable list of lists
     def unravel_json(self, date, time):
-        list_quotes = []
         json_file = self.load_json(date, time)
-        for key in json_file.keys():
-            list_quotes.append(list(zip(
+        
+        list_quotes = [list(zip(
                                     [i[0] for i in json_file.get(key).get('asks')], # ask px
                                     [i[1] for i in json_file.get(key).get('asks')], # ask size
                                     [i[0] for i in json_file.get(key).get('bids')], # bid px
@@ -56,7 +55,7 @@ class Preprocessing:
                                     [json_file.get(key).get('seq')]*100, # seq
                                     [json_file.get(key).get('isFrozen')]*100, # frozen flag
                                     [datetime.strptime(key[-15:], '%Y%m%d_%H%M%S')]*100  #datetime 
-                                ) ) ) 
+                                ) ) for key in json_file.keys()]
         return list_quotes
 
 
@@ -69,8 +68,7 @@ class Preprocessing:
                           columns = ['Ask_Price', 'Ask_Size', 'Bid_Price', 'Bid_Size',
                                         'Level', 'Seq', 'isFrozen', 'Datetime']).sort_values(by = ['Datetime', 'Level'])
 
-        df['Ask_Price'] = pd.to_numeric(df['Ask_Price'])
-        df['Bid_Price'] = pd.to_numeric(df['Bid_Price'])
+        df[['Ask_Price','Bid_Price']] = pd.to_numeric(df[['Ask_Price','Bid_Price']])
         
         df['Bid_Notional'] = df['Bid_Size'] * df['Bid_Price']
         df['Ask_Notional'] = df['Ask_Size'] * df['Ask_Price']
@@ -106,14 +104,17 @@ class Preprocessing:
         
         # bbo hourly bars
         
-        df_bbo_bars = df_bbo.groupby(pd.Grouper(key='Datetime', freq=agg_freq)).agg({'Mid_Price':['mean', 'max', 'min', 
-                                                                                            'first','last', 'count',
-                                                                                            'std'],
-                                                                               'spread': 'mean' }  ) 
+        df_bbo_bars = (df_bbo.groupby(pd.Grouper(key='Datetime', freq=agg_freq))
+                            .agg({'Mid_Price':['mean', 'max', 'min', 
+                                                'first','last', 'count','std'],
+                                   'spread': 'mean' }  )
+                            .set_axis(['mid_mean' , 'mid_high', 'mid_low', 'mid_open', 'mid_close', 'mid_#_obs', 
+                       'mid_std', 'mean_spread'],axis=1)
+                       )
 
         # rename columns
-        df_bbo_bars.columns = ['mid_mean' , 'mid_high', 'mid_low', 'mid_open', 'mid_close', 'mid_#_obs', 
-                       'mid_std', 'mean_spread']
+        # df_bbo_bars.columns = ['mid_mean' , 'mid_high', 'mid_low', 'mid_open', 'mid_close', 'mid_#_obs', 
+        #                'mid_std', 'mean_spread']
         
         if caching:
             df_bbo_bars.to_csv(f'{root_caching_folder}/{security}/bbo.csv', mode='a', header=False)
@@ -152,10 +153,12 @@ class Preprocessing:
         ask_medium_depth = ask_df[ask_df['Ask_Spread'] <= spread_threshold_medium].groupby('Datetime')['Ask_Notional'].sum()
         ask_wide_depth = ask_df[ask_df['Ask_Spread'] <= spread_threshold_wide].groupby('Datetime')['Ask_Notional'].sum()
         
-        bid_ask_depth_df = pd.concat([bid_tight_depth, bid_medium_depth, bid_wide_depth,
+        bid_ask_depth_df = (pd.concat([bid_tight_depth, bid_medium_depth, bid_wide_depth,
                                      ask_tight_depth, ask_medium_depth, ask_wide_depth], axis=1)
-        bid_ask_depth_df.columns = ['bid_tight_depth', 'bid_medium_depth', 'bid_wide_depth',
-                              'ask_tight_depth', 'ask_medium_depth', 'ask_wide_depth']
+                                     .set_axis(['bid_tight_depth', 'bid_medium_depth', 'bid_wide_depth',
+                              'ask_tight_depth', 'ask_medium_depth', 'ask_wide_depth'],axis=1))
+        # bid_ask_depth_df.columns = ['bid_tight_depth', 'bid_medium_depth', 'bid_wide_depth',
+        #                       'ask_tight_depth', 'ask_medium_depth', 'ask_wide_depth']
         
         ba_depth_bars = bid_ask_depth_df.reset_index().groupby(pd.Grouper(key='Datetime', freq=agg_freq)).mean()
         
@@ -244,7 +247,7 @@ base = datetime(2020, 4, 4) # first day we captured data
 numdays = (datetime.today() - base).days # lastday we captured data - prev day
 
 string_dates = [datetime.strftime(base + timedelta(days=x), '%Y/%m/%d') for x in range(numdays)]
-string_hours = [str(i) if len(str(i))==2 else '0'+str(i) for i in range(24)]
+string_hours = [str(i) if len(str(i))==2 else f'0{str(i)}' for i in range(24)]
 
 
 # In[4]:
@@ -264,9 +267,9 @@ data_processing.caching_checks()
 counter = 1
 for date in string_dates: #test on a small portion of files
     for time in string_hours:
-        
+
         print(f'{counter}, {data_processing.file_path(date, time)}')
-        
+
         try:
             df_bbo = data_processing.get_bbo(date=date, time=time)
 
