@@ -1,4 +1,4 @@
-dash
+dash[diskcache]
 torch
 pandas
 numpy
@@ -11,3 +11,7 @@ dask
 ta
 plotly_express
 psycopg2[binary]
+docker
+config
+ccxt
+tqdm
