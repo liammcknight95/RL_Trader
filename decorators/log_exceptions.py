@@ -1,4 +1,4 @@
-import traceback, sys
+import traceback, sys, os
 import logging
 from functools import wraps
 
@@ -7,7 +7,13 @@ log.setLevel(logging.WARNING)
 log_format = logging.Formatter('[%(asctime)s] [%(levelname)s] - %(message)s')
 
 # writing to file                                                     
-file_handler = logging.FileHandler("./logs/exceptions.log")                             
+
+try:
+    file_handler = logging.FileHandler("./logs/exceptions.log")                             
+except FileNotFoundError:
+    os.mkdir("./logs")
+    logging.basicConfig(filename="./logs/exceptions.log",level=logging.WARNING)
+    file_handler = logging.FileHandler("./logs/exceptions.log")
 file_handler.setLevel(logging.WARNING)                                        
 file_handler.setFormatter(log_format)                          
 log.addHandler(file_handler)  
