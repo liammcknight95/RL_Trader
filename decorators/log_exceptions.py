@@ -11,7 +11,7 @@ log_format = logging.Formatter('[%(asctime)s] [%(levelname)s] - %(message)s')
 try:
     file_handler = logging.FileHandler("./logs/exceptions.log")                             
 except FileNotFoundError:
-    os.mkdir("./logs")
+    os.makedirs("./logs", exist_ok=True)
     logging.basicConfig(filename="./logs/exceptions.log",level=logging.WARNING)
     file_handler = logging.FileHandler("./logs/exceptions.log")
 file_handler.setLevel(logging.WARNING)                                        
