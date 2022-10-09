@@ -1,17 +1,13 @@
 dash[diskcache]
-torch
 pandas
 numpy
 boto3
 flask_caching
 diskcache
 dash_bootstrap_components
-sklearn
 dask
-ta
 plotly_express
 psycopg2[binary]
 docker
 config
-ccxt
 tqdm
