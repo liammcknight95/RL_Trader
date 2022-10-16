@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import gzip
-import json
+import json,orjson
 import os
 import shutil
 import boto3
@@ -64,13 +64,13 @@ def data_cleaning(df_px, df_trade):
     )
 
     # merge in unique dataset
-    df_data = pd.merge(
-        df_px, df_trade, left_on="Datetime", right_on="Datetime", how="left"
+    df_data = (
+        pd.merge(df_px, df_trade, left_on="Datetime", right_on="Datetime", how="left")
+        .sort_values(by="Datetime")
+        .set_index("Datetime")
     )
-    df_data.sort_values(by="Datetime", inplace=True)
-    df_data.set_index("Datetime", inplace=True)
 
-    df_missings = df_data[df_data.isna().sum(axis=1) > 0]  # minutes with no trades
+    # df_missings = df_data[df_data.isna().sum(axis=1) > 0]  # minutes with no trades
 
     # impute NAs - zero for size and last px for price. Handle NAs at the top of the df when importing data
     trade_px_cols = ["av_price_buy", "av_price_sell", "wav_price_buy", "wav_price_sell"]
@@ -81,10 +81,10 @@ def data_cleaning(df_px, df_trade):
         "clips_buy",
         "clips_sell",
     ]
-    df_data.loc[:, trade_size_cols + trade_orders_cols] = df_data.loc[
-        :, trade_size_cols + trade_orders_cols
-    ].fillna(0)
-    df_data.loc[:, trade_px_cols] = df_data.loc[:, trade_px_cols].fillna(method="ffill")
+    df_data = df_data.fillna(
+        {column: 0 for column in trade_size_cols + trade_orders_cols}
+    )
+    df_data[trade_px_cols] = df_data[trade_px_cols].fillna(method="ffill")
 
     return df_data
 
@@ -106,14 +106,12 @@ def data_standardization(df_data, norm_type, roll, stdz_depth=1):
     ]
 
     rege_size = re.compile("._Size_")
-    std_depth_size_cols = [col for col in df_data.columns if re.search(rege_size, col)]
+    std_depth_size_cols = [col for col in df_data if re.search(rege_size, col)]
 
     std_trade_size_cols = ["amount_buy", "amount_sell"]
 
     rege_order_book = re.compile("._Level_")
-    std_depth_level_cols = [
-        col for col in df_data.columns if re.search(rege_order_book, col)
-    ]
+    std_depth_level_cols = [col for col in df_data if re.search(rege_order_book, col)]
 
     std_number_trade_cols = [
         "unique_orders_buy",
@@ -141,8 +139,7 @@ def data_standardization(df_data, norm_type, roll, stdz_depth=1):
         df_data[std_number_trade_cols], stdz_depth, norm_type, roll
     )
 
-    # merge dfs back together
-    df_data_dyn_stdz = pd.concat(
+    return pd.concat(
         [
             px_dyn_stdz,
             depth_size_dyn_stdz,
@@ -151,10 +148,7 @@ def data_standardization(df_data, norm_type, roll, stdz_depth=1):
             trade_number_dyn_stdz,
         ],
         axis=1,
-    )
-    df_data_dyn_stdz.dropna(how="all", inplace=True)
-
-    return df_data_dyn_stdz
+    ).dropna(how="all")
 
 
 def train_test_split(df, pctg_split=0.7, stdz_depth=1):
@@ -215,11 +209,11 @@ def import_data(
         print("trades data shape:", df_trade.shape)
 
     else:  # do some basic cleaning to data px
-        df_px["Datetime"] = pd.to_datetime(
-            df_px["Datetime"], format="%Y-%m-%d %H:%M:%S"
+        df_px["Datetime"] = (
+            pd.to_datetime(df_px["Datetime"], format="%Y-%m-%d %H:%M:%S")
+            .sort_values(by="Datetime")
+            .set_index("Datetime")
         )
-        df_px.sort_values(by="Datetime", inplace=True)
-        df_px.set_index("Datetime", inplace=True)
         return df_px
 
     # merge and clean
@@ -280,12 +274,14 @@ def import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, 
     ):  # testing for one of cache files, assuming all were saved
         # Import cached standardized data
         print(f"Reading cached {standardized_train_file}")
-        train_dyn_df = pd.read_csv(standardized_train_file)  # , index_col=1)
-        train_dyn_df.drop("Unnamed: 0", axis=1, inplace=True)
+        train_dyn_df = pd.read_csv(standardized_train_file).drop(
+            "Unnamed: 0", axis=1
+        )  # , index_col=1)
 
         print(f"Reading cached {standardized_test_file}")
-        test_dyn_df = pd.read_csv(standardized_test_file)  # , index_col=1)
-        test_dyn_df.drop("Unnamed: 0", axis=1, inplace=True)
+        test_dyn_df = pd.read_csv(standardized_test_file).drop(
+            "Unnamed: 0", axis=1
+        )  # , index_col=1)
 
         print(f"Reading cached {top_ob_train_file}")
         top_ob_train = pd.read_csv(top_ob_train_file)  # , index_col=[0,1])
@@ -340,12 +336,14 @@ def import_px_data(frequency, pair, date_start, date_end, lob_depth, norm_type, 
     # test_dyn_df.set_index('index', inplace=True)
 
     # top_ob_train = top_ob_train.reset_index()
-    top_ob_train["Datetime"] = pd.to_datetime(top_ob_train["Datetime"])
-    top_ob_train.drop("Unnamed: 0", axis=1, inplace=True)
+    top_ob_train["Datetime"] = pd.to_datetime(top_ob_train["Datetime"]).drop(
+        "Unnamed: 0", axis=1
+    )
 
     # top_ob_test = top_ob_test.reset_index()
-    top_ob_test["Datetime"] = pd.to_datetime(top_ob_test["Datetime"])
-    top_ob_test.drop("Unnamed: 0", axis=1, inplace=True)
+    top_ob_test["Datetime"] = pd.to_datetime(top_ob_test["Datetime"]).drop(
+        "Unnamed: 0", axis=1
+    )
 
     return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test
 
@@ -413,7 +411,7 @@ def standardized_data_cache(
     top_ob_train.to_csv(
         top_ob_train_file, compression="gzip"
     )  # save top level not standardized to csv
-    top_ob_train.reset_index(inplace=True)
+    top_ob_train = top_ob_train.reset_index()
     # print(f'Saving {standardized_data_folder}/{pair}/TRAIN_top--{norm_type}-{roll}--{input_file_name}')
     # train_dyn_df[train_dyn_df['Level']==0].to_csv(f'{standardized_data_folder}/{pair}/TRAIN_TOP--{norm_type}-{roll}--{input_file_name}', compression='gzip') # save top level to csv
 
@@ -448,7 +446,7 @@ def standardized_data_cache(
     top_ob_test.to_csv(
         top_ob_test_file, compression="gzip"
     )  # # save top level not standardized to csv
-    top_ob_test.reset_index(inplace=True)
+    top_ob_test = top_ob_test.reset_index()
 
     return train_dyn_df, test_dyn_df, top_ob_train, top_ob_test
 
@@ -548,11 +546,12 @@ def get_lob_download_only(
                         f"{raw_data_folder}/tmp/{pair}/{day_folder}", exist_ok=True
                     )
 
-                    keys = []
-                    for obj in data_bucket.objects.filter(
-                        Prefix=f"{pair}/{day_folder}"
-                    ):
-                        keys.append(obj.key)
+                    keys = [
+                        obj.key
+                        for obj in data_bucket.objects.filter(
+                            Prefix=f"{pair}/{day_folder}"
+                        )
+                    ]
 
                     download_s3_folder(data_bucket, day_folder, keys)
                     shutil.move(
@@ -709,14 +708,12 @@ def ingest_single_day(
 
         # TODO fix sequence order
 
-        raw_data_frame = pd.DataFrame.from_dict(raw_data, orient="index")
-        raw_data_frame.reset_index(inplace=True)
-        raw_data_frame["index"] = raw_data_frame["index"].str[-15:]
+        raw_data_frame = pd.DataFrame.from_dict(raw_data, orient="index").reset_index()
         raw_data_frame["index"] = pd.to_datetime(
-            raw_data_frame["index"], format="%Y%m%d_%H%M%S"
+            raw_data_frame["index"].str[-15:], format="%Y%m%d_%H%M%S"
         )
-        raw_data_frame.set_index("index", drop=True, inplace=True)
-        raw_data_frame.sort_index(inplace=True)
+        raw_data_frame = raw_data_frame.set_index("index", drop=True).sort_index()
+
         idx_start = date_to_process
         idx_end = date_to_process + timedelta(days=1) - timedelta(seconds=1)
         idx = pd.date_range(idx_start, idx_end, freq="1s")
@@ -728,8 +725,8 @@ def ingest_single_day(
         levels = list(range(lob_depth))
         for row in raw_data_frame.itertuples():
 
-            ask_price, ask_volume = zip(*row.asks[0:lob_depth])
-            bid_price, bid_volume = zip(*row.bids[0:lob_depth])
+            ask_price, ask_volume = zip(*row.asks[:lob_depth])
+            bid_price, bid_volume = zip(*row.bids[:lob_depth])
             sequences = [row.seq] * lob_depth
             datetimes = [row.Index] * lob_depth
 
@@ -759,12 +756,11 @@ def ingest_single_day(
             "Sequence",
             "Datetime",
         ],
-    )
+    ).sort_values(by=["Datetime", "Level"])
 
     day_data["Ask_Price"] = day_data["Ask_Price"].astype("float64")
     day_data["Bid_Price"] = day_data["Bid_Price"].astype("float64")
     day_data["Sequence"] = day_data["Sequence"].astype("int64")
-    day_data.sort_values(by=["Datetime", "Level"], inplace=True)
     day_data.to_csv(original_file_name, compression="gzip")
 
     return day_data
@@ -896,14 +892,16 @@ def get_lob_data(
 
                     # TODO fix sequence order
 
-                    raw_data_frame = pd.DataFrame.from_dict(raw_data, orient="index")
-                    raw_data_frame.reset_index(inplace=True)
-                    raw_data_frame["index"] = raw_data_frame["index"].str[-15:]
+                    raw_data_frame = pd.DataFrame.from_dict(
+                        raw_data, orient="index"
+                    ).reset_index()
                     raw_data_frame["index"] = pd.to_datetime(
-                        raw_data_frame["index"], format="%Y%m%d_%H%M%S"
+                        raw_data_frame["index"].str[-15:], format="%Y%m%d_%H%M%S"
                     )
-                    raw_data_frame.set_index("index", drop=True, inplace=True)
-                    raw_data_frame.sort_index(inplace=True)
+
+                    raw_data_frame = raw_data_frame.set_index(
+                        "index", drop=True
+                    ).sort_index()
                     idx_start = date_to_process
                     idx_end = date_to_process + timedelta(days=1) - timedelta(seconds=1)
                     idx = pd.date_range(idx_start, idx_end, freq="1s")
@@ -915,8 +913,8 @@ def get_lob_data(
                     levels = list(range(lob_depth))
                     for row in raw_data_frame.itertuples():
 
-                        ask_price, ask_volume = zip(*row.asks[0:lob_depth])
-                        bid_price, bid_volume = zip(*row.bids[0:lob_depth])
+                        ask_price, ask_volume = zip(*row.asks[:lob_depth])
+                        bid_price, bid_volume = zip(*row.bids[:lob_depth])
                         sequences = [row.seq] * lob_depth
                         datetimes = [row.Index] * lob_depth
 
@@ -948,12 +946,11 @@ def get_lob_data(
                             "Sequence",
                             "Datetime",
                         ],
-                    )
+                    ).sort_values(by=["Datetime", "Level"])
 
                     day_data["Ask_Price"] = day_data["Ask_Price"].astype("float64")
                     day_data["Bid_Price"] = day_data["Bid_Price"].astype("float64")
                     day_data["Sequence"] = day_data["Sequence"].astype("int64")
-                    day_data.sort_values(by=["Datetime", "Level"], inplace=True)
                     day_data.to_parquet(original_file_name)
 
                 else:
@@ -1016,15 +1013,15 @@ def get_lob_data(
 
                 tgt_sprd_bps = int(target_sprd * 10000)
                 df_mask = df[df[f"{side}_Spread"] <= target_sprd].copy()
-                df_grouped = df_mask.groupby(pd.Grouper(key="Datetime", freq=freq)).agg(
-                    {"Level": np.max, f"{side}_Size": np.sum}
-                )
-                df_grouped.rename(
-                    columns={
-                        "Level": f"{side}_Level_{tgt_sprd_bps}bps",
-                        f"{side}_Size": f"{side}_Size_{tgt_sprd_bps}bps",
-                    },
-                    inplace=True,
+                df_grouped = (
+                    df_mask.groupby(pd.Grouper(key="Datetime", freq=freq))
+                    .agg({"Level": np.max, f"{side}_Size": np.sum})
+                    .rename(
+                        columns={
+                            "Level": f"{side}_Level_{tgt_sprd_bps}bps",
+                            f"{side}_Size": f"{side}_Size_{tgt_sprd_bps}bps",
+                        }
+                    )
                 )
                 # if spread is too wide,
                 # df_grouped.loc[:,f'{side}_Level_{tgt_sprd_bps}bps'] = df_grouped.loc[:,f'{side}_Level_{tgt_sprd_bps}bps'].fillna(101)
@@ -1053,15 +1050,16 @@ def get_lob_data(
             ).reset_index()
 
             # imputation, fill NAs left from depth aggregation
-            level_cols = [col for col in df_depth.columns if "Level" in col]
-            size_cols = [col for col in df_depth.columns if "Size" in col]
+            level_cols = [col for col in df_depth if "Level" in col]
+            size_cols = [col for col in df_depth if "Size" in col]
 
-            df_px_final.loc[:, level_cols] = (
-                df_px_final.loc[:, level_cols].fillna(-1).astype("int64")
-            )  # assign negative level value if no quote meet spread criteria
-            df_px_final.loc[:, size_cols] = (
-                df_px_final.loc[:, size_cols].fillna(0).astype("float64")
-            )  # and assign zero size to those
+            df_px_final = df_px_final.fillna(
+                {column: -1 for column in level_cols}
+                | {column: 0 for column in size_cols}
+            ).astype(
+                {column: "int64" for column in level_cols}
+                | {column: "float64" for column in size_cols}
+            )
 
             df_px_final.to_parquet(resampled_file_path)
 
@@ -1113,7 +1111,7 @@ def load_lob_json(json_string):
     Returns: dictionary from decoded json string
     """
     try:
-        json_dict = json.loads(json_string)
+        json_dict = orjson.loads(json_string)
 
     except json.JSONDecodeError as e:
         print(
@@ -1251,17 +1249,17 @@ def get_trade_data(pair, date_start, date_end, frequency=timedelta(seconds=60)):
             dfwavg.name = "wav_price"
 
             # merge size weighted trade prices into grouped df
-            df_trades_grp = pd.merge(
-                df_trades_grp, dfwavg, left_index=True, right_index=True
-            ).reset_index()
-            df_trades_grp.rename(
-                columns={
-                    "date": "Datetime",
-                    "rate": "av_price",
-                    "orderNumber": "unique_orders",
-                    "globalTradeID": "clips",
-                },
-                inplace=True,
+            df_trades_grp = (
+                pd.merge(df_trades_grp, dfwavg, left_index=True, right_index=True)
+                .reset_index()
+                .rename(
+                    columns={
+                        "date": "Datetime",
+                        "rate": "av_price",
+                        "orderNumber": "unique_orders",
+                        "globalTradeID": "clips",
+                    }
+                )
             )
 
             # pivot by trade direction
@@ -1272,9 +1270,13 @@ def get_trade_data(pair, date_start, date_end, frequency=timedelta(seconds=60)):
             ).reset_index()
 
             # "flatten" column names
-            df_trades_piv.columns = list(map("_".join, df_trades_piv.columns))
-            df_trades_piv.rename(columns={"Datetime_": "Datetime"}, inplace=True)
-            df_trades_piv.set_index("Datetime", inplace=True)
+            df_trades_piv = (
+                df_trades_piv.set_axis(
+                    list(map("_".join, df_trades_piv.columns)), axis=1
+                )
+                .rename(columns={"Datetime_": "Datetime"})
+                .set_index("Datetime")
+            )
 
             # impute NAs - zero for size and last px for price. Handle NAs at the top of the df when importing data
             trade_px_cols = [
@@ -1290,12 +1292,12 @@ def get_trade_data(pair, date_start, date_end, frequency=timedelta(seconds=60)):
                 "clips_buy",
                 "clips_sell",
             ]
-            df_trades_piv.loc[
-                :, trade_size_cols + trade_orders_cols
-            ] = df_trades_piv.loc[:, trade_size_cols + trade_orders_cols].fillna(0)
-            df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[
-                :, trade_px_cols
-            ].fillna(method="ffill")
+            df_trades_piv = df_trades_piv.fillna(
+                {column: 0 for column in trade_size_cols + trade_orders_cols}
+            )
+            df_trades_piv[trade_px_cols] = df_trades_piv[trade_px_cols].fillna(
+                method="ffill"
+            )
 
             # impute NAs for the first rows of the dataframes - #### imputation maybe better handled when importin data
             if df_trades_piv.isna().sum(axis=1).iloc[0] > 0:
@@ -1309,12 +1311,10 @@ def get_trade_data(pair, date_start, date_end, frequency=timedelta(seconds=60)):
                     prev_file_px = prev_day_data.iloc[-1][trade_px_cols]
 
                     # fill outstanding NAs
-                    df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[
-                        :, trade_px_cols
-                    ].fillna(prev_file_px)
-                    df_trades_piv.loc[:, trade_px_cols] = df_trades_piv.loc[
-                        :, trade_px_cols
-                    ].fillna(prev_file_px)
+                    df_trades_piv[trade_px_cols] = df_trades_piv[trade_px_cols].fillna(
+                        prev_file_px
+                    )
+
                 except Exception as e:
                     # if previous day not in the database, use first avaialble future value - not ideal
                     print(e)
@@ -1322,7 +1322,6 @@ def get_trade_data(pair, date_start, date_end, frequency=timedelta(seconds=60)):
                     # NOT ideal cause we are leaking information
                     # prev_file_px = df_trades_piv[trade_px_cols].dropna().iloc[0]
                     print("inside block")
-                    pass
 
             print("outside if block")
 
@@ -1426,10 +1425,7 @@ def reshape_lob_levels(z_df, output_type="array"):
 
     elif output_type == "array":
 
-        depth_values = (
-            reshaped_z_df.values
-        )  # numpy array ready to be used as input for cnn_data_reshaping
-        return depth_values, dt_index
+        return reshaped_z_df.values, dt_index
 
 
 # Evaluate model predictions
